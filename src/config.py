@@ -32,6 +32,6 @@ class Settings(BaseSettings):
 
 
 def default_output_dir(pptx_path: Path) -> Path:
-    """Default snapshot directory beside the PPT under ppt_snapshots/."""
-    base = Path("ppt_snapshots")
+    """Default snapshot directory beside the PPT under ppt_outputs/."""
+    base = Path("ppt_outputs")
     return base / pptx_path.stem

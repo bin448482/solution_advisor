@@ -17,13 +17,13 @@ The primary focus is the PPT parsing pipeline, which extracts slides as images, 
 
 ```bash
 # Basic usage
-python -m src --input ppts/ChatBI产品介绍_2025.pptx --output ppt_snapshots/ChatBI产品介绍_2025
+python -m src --input ppts/ChatBI产品介绍_2025.pptx --output ppt_outputs/ChatBI产品介绍_2025
 
 # Force re-run (ignore cached results)
-python -m src --input ppts/<file>.pptx --output ppt_snapshots/<name> --force
+python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --force
 
 # Verbose logging
-python -m src --input ppts/<file>.pptx --output ppt_snapshots/<name> --verbose
+python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --verbose
 ```
 
 ### Testing
@@ -108,7 +108,7 @@ src/
 ### Output Structure
 
 ```
-ppt_snapshots/<ppt_basename>/
+ppt_outputs/<ppt_basename>/
 ├── slides/
 │   ├── 001.png, 002.png, ...
 ├── page_summaries/
@@ -171,10 +171,10 @@ MAX_WORKERS=3
 
 **File Naming**:
 - Input PPTs: `ppts/<ProjectName>_<Year>.pptx`
-- Output snapshots: `ppt_snapshots/<ppt_basename>/`
+- Output snapshots: `ppt_outputs/<ppt_basename>/`
 - Docs: `docs/<Topic>.md`
 
-**Generated Artifacts**: `ppt_snapshots/` is treated as build artifacts. Update `.gitignore` if these should not be committed.
+**Generated Artifacts**: `ppt_outputs/` is treated as build artifacts. Update `.gitignore` if these should not be committed.
 
 ## External Consulting Agent (Future)
 

@@ -48,7 +48,7 @@
 
 以输入文件基名 `ChatBI产品介绍_2025` 为例：
 
-- `ppt_snapshots/ChatBI产品介绍_2025/`
+- `ppt_outputs/ChatBI产品介绍_2025/`
   - `slides/`
     - `001.png` … `NNN.png`
   - `page_summaries/`
@@ -149,7 +149,7 @@ PPTX
 
 **FR-RUN-01**：提供最小可用运行入口（二选一即可）：
 
-- CLI：如 `python -m ... --input docs/ChatBI产品介绍_2025.pptx --out ppt_snapshots/...`
+- CLI：如 `python -m ... --input docs/ChatBI产品介绍_2025.pptx --out ppt_outputs/...`
 - 或 API：HTTP/函数调用方式（入参路径/出参目录）
 
 **FR-RUN-02**：幂等与增量：
@@ -229,4 +229,3 @@ PPTX
 3) 运行环境：是否允许安装 LibreOffice/PowerPoint（决定切图实现路径）？  
 4) 模型调用：使用哪个多模态模型/接口？是否必须离线/内网？  
 5) 对敏感信息的处理要求：是否需要自动脱敏/打码？  
-

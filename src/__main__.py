@@ -14,7 +14,7 @@ from src.pipeline import PPTPipeline
     "output_dir",
     required=False,
     type=click.Path(dir_okay=True, file_okay=False, path_type=Path),
-    help="输出目录（默认：ppt_snapshots/<PPT名>）",
+    help="输出目录（默认：ppt_outputs/<PPT名>）",
 )
 @click.option("--force", is_flag=True, default=False, help="强制重新运行，忽略已有 manifest")
 @click.option("-v", "--verbose", is_flag=True, default=False, help="打印进度")

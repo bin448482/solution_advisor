@@ -1,5 +1,5 @@
 # Generated outputs
-ppt_snapshots/
+ppt_outputs/
 
 # Local agent/tool config (may contain environment-specific values)
 .claude/settings.local.json
@@ -21,4 +21,4 @@ node_modules/
 dist/
 build/
 *.log
-
+.env

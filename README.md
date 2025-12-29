@@ -10,7 +10,7 @@
 
 ## 运行
 ```bash
-python -m src --input ppts/ChatBI产品介绍_2025.pptx --output ppt_snapshots/ChatBI产品介绍_2025 --force
+python -m src --input ppts/ChatBI产品介绍_2025.pptx --output ppt_outputs/ChatBI产品介绍_2025 --force
 ```
 
 输出目录包含：
