@@ -48,3 +48,8 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 - Do not commit API keys, tokens, or customer-sensitive content.
 - If `ppt_snapshots/` is treated as generated output, add/update `.gitignore` accordingly.
 
+## Code status (MVP skeleton)
+- Python pipeline lives in `src/` with CLI entry `python -m src --input ppts/... --output ppt_snapshots/... --force`.
+- Core pieces: rendering (`renderer/libreoffice.py`), text extraction (`extractor/ppt_extractor.py`), LLM summarization (`summarizer/`), orchestration (`pipeline.py`), config (`config.py`), CLI (`__main__.py`), utilities (`utils.py`).
+- Tests under `tests/` include model sanity and an e2e smoke that requires `soffice` + `pdftoppm` and uses `LLM_PROVIDER=mock`.
+- Dependencies listed in `requirements.txt`; environment template in `.env.example`; usage in `README.md`.
