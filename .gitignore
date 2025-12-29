@@ -1,0 +1,24 @@
+# Generated outputs
+ppt_snapshots/
+
+# Local agent/tool config (may contain environment-specific values)
+.claude/settings.local.json
+**/*.local.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Common build/venv caches (future-proof if code is added)
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+node_modules/
+dist/
+build/
+*.log
+
