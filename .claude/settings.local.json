@@ -4,7 +4,8 @@
       "WebFetch(domain:hyper.ai)",
       "WebSearch",
       "WebFetch(domain:arxiv.org)",
-      "Bash(python -m venv:*)"
+      "Bash(python -m venv:*)",
+      "Bash(claude:*)"
     ]
   }
 }

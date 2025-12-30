@@ -64,9 +64,12 @@ PPTX Input
   ↓
 [ProfileGenerator] LLM: Aggregate summaries → project profile with evidence map
   ↓
-[RAGPreparer] Slide-level + project-level docs → embeddings/rag_documents.json
+[RAGPreparer] Clean summaries + prepare embeddings → embeddings/rag_documents.json
+  ├─ clean_summary_for_embedding: Unnest JSON, strip <think> blocks, flag noise
+  ├─ prepare_slide_embedding: Convert each PageSummary to embedding doc
+  └─ prepare_project_embedding: Convert ProjectProfile to overview doc
   ↓
-[Pipeline] Write manifest.json with metadata and errors
+[Pipeline] Write manifest.json with metadata, errors, and rag_documents count
 ```
 
 ### Key Architectural Decisions
@@ -79,6 +82,9 @@ PPTX Input
 - Critical errors (missing dependencies, invalid config) → fail fast
 - Single-page errors → continue processing, collect errors in manifest
 - LLM API errors → retry 3x with exponential backoff
+- RAG preparation errors → flag in manifest with stage markers:
+  - `rag_clean`: Noise/JSON issues in summaries (bullets_look_like_json, detail_unpack_failed)
+  - `rag_prep`: General RAG preparation failures
 
 **Idempotency**: Uses SHA256 hash of input PPTX stored in manifest.json. Re-runs skip rendering if hash unchanged (override with `--force`).
 
@@ -94,6 +100,10 @@ src/
 ├── models.py              # Pydantic schemas (SlideText, PageSummary, ProjectProfile, Manifest)
 ├── config.py              # Environment-based configuration (API keys, paths, limits)
 ├── utils.py               # File hashing, path handling
+├── rag.py                 # RAG document preparation (pipeline.py:90-113)
+│   ├── prepare_slide_embedding()    # PageSummary → embedding doc
+│   ├── prepare_project_embedding()  # ProjectProfile → overview doc
+│   └── clean_summary_for_embedding() # Noise detection & JSON unnesting
 ├── renderer/
 │   ├── base.py           # Abstract Renderer interface
 │   └── libreoffice.py    # LibreOffice implementation
@@ -118,15 +128,24 @@ ppt_outputs/<ppt_basename>/
 ├── doc_summary/
 │   └── project_profile.json
 ├── embeddings/
-│   └── rag_documents.json
+│   └── rag_documents.json    # Slide-level + project-level docs for vector DB
 └── manifest.json
 ```
 
-**manifest.json** contains: input file hash, timestamp, page count, processing duration, and error list (slide_no, stage, error message).
+**manifest.json** contains: input file hash, timestamp, page count, processing duration, error list (slide_no, stage, error message), and `rag_documents` count.
 
-**Noise handling & RAG prep**
-- PageSummarizer accepts dict or list JSON responses and captures optional `image_caption` for visual grounding.
-- RAG step auto-unnests JSON-looking `details`, flags noisy bullets into `manifest.errors` (stage: `rag_clean`), and records `rag_documents` count.
+**Error stages** in manifest:
+- `render`: Slide rendering failures
+- `extract`: Text extraction issues
+- `summarize`: Page summarization errors
+- `profile`: Profile generation failures
+- `rag_clean`: Noise/JSON issues in summaries (bullets_look_like_json, detail_unpack_failed)
+- `rag_prep`: General RAG preparation failures
+
+**embeddings/rag_documents.json** structure:
+- Array of embedding-ready documents
+- Each document contains: `id`, `text` (semantic content), `metadata` (project_name, slide_no, page_type, confidence, level), `original_json`
+- Two levels: slide-level (detail) and project-level (overview)
 
 ## Configuration
 
@@ -137,11 +156,14 @@ config/settings.example.yaml  # template with placeholders
 ```
 CLI flag `--config` overrides the path; otherwise defaults to `config/settings.yaml`.
 
+**Mock Provider for Testing**: For offline testing or when LLM API is unavailable, set `llm_provider: mock` in settings.yaml. Mock mode returns the prompt as output without API calls, enabling pipeline testing without external dependencies.
+
 ## Data Models (Pydantic)
 
 **PageSummary** fields:
 - `slide_no`, `title`, `one_liner` (≤30 chars)
 - `bullets` (3-7 items), `details` (1-2 paragraphs)
+- `image_caption` (optional, for visual grounding from LLM vision)
 - `entities` (products, modules, customers, metrics)
 - `signals` (page type: positioning, architecture, features, cases, etc.)
 - `evidence` (at minimum: slide_no)
@@ -153,6 +175,110 @@ CLI flag `--config` overrides the path; otherwise defaults to `config/settings.y
 - Competitive: `differentiators`, `cases`
 - Boundaries: `risks_and_limits`, `open_questions`
 - **`evidence_map`**: Maps each field to source slide numbers (critical for traceability)
+
+**Manifest** fields:
+- `input_file`, `file_hash`, `timestamp`, `output_dir`
+- `page_count`, `duration_seconds`
+- `provider`, `model` (LLM configuration used)
+- `page_summaries` (count of successfully generated summaries)
+- `rag_documents` (count of documents in embeddings/rag_documents.json)
+- `errors` (list of dicts with stage, slide_no, error message)
+
+## RAG Document Generation
+
+The pipeline includes a RAG preparation step (src/rag.py, integrated in pipeline.py:90-113) that converts page summaries and project profiles into embedding-ready documents for vector databases.
+
+### Purpose
+
+Transform structured summaries into semantic text documents optimized for:
+- Vector embedding and similarity search
+- Metadata-based filtering (project, slide, page type, confidence)
+- Traceability back to original JSON structures
+
+### Two-Level Approach
+
+**Slide-Level Documents** (detail):
+- One document per PageSummary
+- ID format: `{project_name}_slide_{slide_no:03d}`
+- Semantic text includes: project name, page title, visual description, core summary, key points, details, keywords
+- Metadata: project_name, slide_no, page_type (signals), entities, confidence, level="slide"
+- Preserves original_json for full traceability
+
+**Project-Level Document** (overview):
+- Single aggregated document per ProjectProfile
+- ID format: `{project_name}_overview`
+- Semantic text includes: positioning, core value, target users, capabilities, differentiators, architecture, deployment, integrations, cases, risks, open questions
+- Metadata: project_name, slide_no=0 (virtual), page_type=["overview", "profile"], level="project"
+- Enables high-level project discovery queries
+
+### Noise Handling & Cleaning
+
+The `clean_summary_for_embedding()` function addresses LLM output quality issues:
+
+**JSON Unnesting**:
+- Detects JSON-like content in `details` field (starts with `{` or `[`)
+- Attempts to parse and extract nested `bullets` and `details` fields
+- Flags `detail_unpack_failed` if parsing fails
+
+**Think Block Removal**:
+- Strips `<think>...</think>` blocks that some models prepend
+- Ensures clean semantic text for embedding
+
+**Bullet Cleaning**:
+- Detects bullets containing embedded JSON
+- Attempts to extract and flatten nested bullet arrays
+- Flags `bullets_look_like_json` if suspicious content remains
+
+**Error Flagging**:
+- Issues are recorded in manifest.json with stage=`rag_clean`
+- Includes slide_no and specific error type for manual review
+- Processing continues with cleaned data
+
+### Output Format
+
+**embeddings/rag_documents.json** structure:
+```json
+[
+  {
+    "id": "ChatBI_slide_001",
+    "text": "项目: ChatBI\n页面标题: ...\n核心总结: ...\n关键点:\n- ...\n详情: ...\n关键词: ...",
+    "metadata": {
+      "project_name": "ChatBI",
+      "source": "ChatBI",
+      "slide_no": 1,
+      "page_type": ["positioning", "features"],
+      "entities": ["ChatBI", "BI", "数据分析"],
+      "confidence": 0.9,
+      "level": "slide"
+    },
+    "original_json": "{...}"
+  },
+  {
+    "id": "ChatBI_overview",
+    "text": "项目综述: ChatBI\n定位: ...\n核心价值: ...\n目标用户: ...",
+    "metadata": {
+      "project_name": "ChatBI",
+      "source": "ChatBI",
+      "slide_no": 0,
+      "page_type": ["overview", "profile"],
+      "level": "project"
+    },
+    "original_json": "{...}"
+  }
+]
+```
+
+### Integration
+
+RAG preparation runs automatically after profile generation:
+1. Pipeline generates all PageSummary objects (parallel)
+2. Pipeline generates ProjectProfile (sequential)
+3. RAG step processes each summary through `clean_summary_for_embedding()`
+4. RAG step calls `prepare_slide_embedding()` for each cleaned summary
+5. RAG step calls `prepare_project_embedding()` for the profile
+6. All documents written to embeddings/rag_documents.json
+7. Document count recorded in manifest.json as `rag_documents`
+8. Any cleaning issues flagged in manifest.errors with stage=`rag_clean`
 
 ## Prompt Engineering
 
@@ -174,6 +300,19 @@ CLI flag `--config` overrides the path; otherwise defaults to `config/settings.y
 - Docs: `docs/<Topic>.md`
 
 **Generated Artifacts**: `ppt_outputs/` is treated as build artifacts. Update `.gitignore` if these should not be committed.
+
+## Documentation Structure
+
+This project uses a hierarchical AGENTS.md documentation system for module-specific implementation details:
+
+- **`AGENTS.md`**: Repository guidelines, project structure, build/test commands, coding conventions
+- **`src/AGENTS.md`**: Pipeline overview, config system, dependencies
+- **`src/renderer/AGENTS.md`**: Rendering strategy details (PPTX → PDF → PNG)
+- **`src/extractor/AGENTS.md`**: Text extraction approach using python-pptx
+- **`src/summarizer/AGENTS.md`**: LLM client and summarization logic
+- **`tests/AGENTS.md`**: Test structure and smoke tests
+
+Refer to these files for detailed implementation notes and architectural decisions for each module. This CLAUDE.md provides the high-level overview and integration points.
 
 ## External Consulting Agent (Future)
 
