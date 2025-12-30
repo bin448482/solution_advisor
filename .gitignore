@@ -1,6 +1,10 @@
 # Generated outputs
 ppt_outputs/
 
+# Vector database and model cache
+chroma_db/
+models/
+
 # Local agent/tool config (may contain environment-specific values)
 .claude/settings.local.json
 **/*.local.json
