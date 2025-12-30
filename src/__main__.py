@@ -18,8 +18,17 @@ from src.pipeline import PPTPipeline
 )
 @click.option("--force", is_flag=True, default=False, help="强制重新运行，忽略已有 manifest")
 @click.option("-v", "--verbose", is_flag=True, default=False, help="打印进度")
-def main(input_file: Path, output_dir: Path | None, force: bool, verbose: bool) -> None:
-    settings = Settings()
+@click.option(
+    "--config",
+    "config_path",
+    required=False,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=Path("config/settings.yaml"),
+    show_default=True,
+    help="YAML 配置文件路径",
+)
+def main(input_file: Path, output_dir: Path | None, force: bool, verbose: bool, config_path: Path) -> None:
+    settings = Settings.from_yaml(config_path)
     target_dir = output_dir or default_output_dir(input_file)
     pipeline = PPTPipeline(settings=settings, verbose=verbose)
     manifest = pipeline.run(pptx_path=input_file, output_dir=target_dir, force_rerun=force)

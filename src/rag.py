@@ -120,6 +120,36 @@ def _unpack_json_blob(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _strip_think_blocks(text: str) -> str:
+    """Remove <think>...</think> blocks that some models prepend."""
+    start_tag, end_tag = "<think>", "</think>"
+    while True:
+        start = text.find(start_tag)
+        if start == -1:
+            break
+        end = text.find(end_tag, start + len(start_tag))
+        if end == -1:
+            # No closing tag; drop from start tag onward
+            text = text[:start]
+            break
+        text = text[:start] + text[end + len(end_tag) :]
+    return text.strip()
+
+
+def _extract_embedded_json(text: str) -> Optional[Dict[str, Any] | List[Any]]:
+    """Find first '{' or '[' in text (after stripping <think>) and try to json.loads from there."""
+    cleaned = _strip_think_blocks(text)
+    for ch in ("{", "["):
+        idx = cleaned.find(ch)
+        if idx != -1:
+            candidate = cleaned[idx:]
+            try:
+                return json.loads(candidate)
+            except Exception:
+                continue
+    return None
+
+
 def clean_summary_for_embedding(summary: PageSummary) -> Tuple[PageSummary, List[str]]:
     """
     Unnests suspicious JSON-like details and flags noisy bullets before embedding.
@@ -128,22 +158,51 @@ def clean_summary_for_embedding(summary: PageSummary) -> Tuple[PageSummary, List
     issues: List[str] = []
     new_summary = summary
 
-    if isinstance(summary.details, str) and _looks_like_embedded_json(summary.details):
-        unpacked = _unpack_json_blob(summary.details)
-        if unpacked:
-            new_summary = summary.model_copy(
-                update={
-                    "bullets": unpacked.get("bullets") or summary.bullets,
-                    "details": unpacked.get("details") or summary.details,
-                }
-            )
-        else:
-            issues.append("detail_unpack_failed")
+    # 1) details: try strict head, then embedded JSON after stripping think
+    if isinstance(summary.details, str):
+        looks_json = _looks_like_embedded_json(summary.details) or ("{" in summary.details or "[" in summary.details)
+        if looks_json:
+            unpacked = None
+            if _looks_like_embedded_json(summary.details):
+                unpacked = _unpack_json_blob(summary.details)
+            if not unpacked:
+                embedded = _extract_embedded_json(summary.details)
+                if isinstance(embedded, dict):
+                    unpacked = embedded
 
-    if any(
-        isinstance(b, str) and ("[" in b or "{" in b or "slide_no" in b)
-        for b in new_summary.bullets
-    ):
+            if unpacked:
+                new_summary = summary.model_copy(
+                    update={
+                        "bullets": unpacked.get("bullets") or summary.bullets,
+                        "details": unpacked.get("details") or summary.details,
+                    }
+                )
+            else:
+                issues.append("detail_unpack_failed")
+
+    # 2) bullets: attempt to unpack if a bullet carries JSON; otherwise flag
+    new_bullets: List[str] = []
+    bullets_flagged = False
+    bullets_unpacked = False
+    for b in new_summary.bullets:
+        if isinstance(b, str) and ("{" in b or "[" in b):
+            parsed = _extract_embedded_json(b)
+            if isinstance(parsed, dict) and parsed.get("bullets"):
+                new_bullets.extend(parsed["bullets"])
+                bullets_unpacked = True
+                continue
+            if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed):
+                new_bullets.extend(parsed)
+                bullets_unpacked = True
+                continue
+            bullets_flagged = True
+            new_bullets.append(b)
+        else:
+            new_bullets.append(b)
+
+    if bullets_unpacked:
+        new_summary = new_summary.model_copy(update={"bullets": new_bullets})
+    if bullets_flagged:
         issues.append("bullets_look_like_json")
 
     return new_summary, issues

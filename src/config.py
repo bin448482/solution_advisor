@@ -1,43 +1,36 @@
 from pathlib import Path
+from typing import Any, Dict
 
-from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import yaml
+from pydantic import BaseModel, Field
 
 
-class Settings(BaseSettings):
-    """Application configuration loaded from environment or .env."""
+class Settings(BaseModel):
+    """Application configuration loaded from a YAML file."""
 
-    llm_provider: str = Field(
-        default="openai",
-        validation_alias=AliasChoices("LLM_PROVIDER", "OPENAI_PROVIDER"),
-    )
-    llm_api_key: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("LLM_API_KEY", "OPENAI_API_KEY"),
-    )
-    llm_base_url: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("LLM_BASE_URL", "OPENAI_BASE_URL"),
-    )
-    llm_model: str = Field(
-        default="gpt-4-vision-preview",
-        validation_alias=AliasChoices("LLM_MODEL", "OPENAI_MODEL"),
-    )
-    llm_temperature: float = Field(
-        default=0.1,
-        validation_alias=AliasChoices("LLM_TEMPERATURE", "OPENAI_TEMPERATURE"),
-    )
+    llm_provider: str = Field(default="openai")
+    llm_api_key: str | None = Field(default=None)
+    llm_base_url: str | None = Field(default=None)
+    llm_model: str = Field(default="gpt-4-vision-preview")
+    llm_temperature: float = Field(default=0.1)
 
-    render_dpi: int = Field(default=150, alias="RENDER_DPI")
-    max_workers: int = Field(default=3, alias="MAX_WORKERS")
-    libreoffice_path: str = Field(default="soffice", alias="LIBREOFFICE_PATH")
-    pdftoppm_path: str = Field(default="pdftoppm", alias="PDFTOPPM_PATH")
+    render_dpi: int = Field(default=150)
+    max_workers: int = Field(default=3)
+    libreoffice_path: str = Field(default="soffice")
+    pdftoppm_path: str = Field(default="pdftoppm")
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+    @classmethod
+    def from_yaml(cls, path: Path | str = Path("config/settings.yaml")) -> "Settings":
+        """Load settings from YAML; raise if missing to avoid silent defaults."""
+
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Config file not found: {path}. Copy config/settings.example.yaml and fill in secrets."
+            )
+
+        data: Dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return cls(**data)
 
     def with_overrides(self, **kwargs) -> "Settings":
         """Return a copy with runtime overrides (used by CLI)."""

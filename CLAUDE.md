@@ -130,21 +130,12 @@ ppt_outputs/<ppt_basename>/
 
 ## Configuration
 
-Configuration priority: CLI arguments > environment variables > defaults
-
-Required environment variables (create `.env` file):
+Configuration now comes from YAML (no .env):
 ```
-LLM_API_KEY=sk-...
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4-vision-preview
-LIBREOFFICE_PATH=/usr/bin/soffice  # Windows: C:\Program Files\LibreOffice\program\soffice.exe
+config/settings.yaml  # gitignored real config
+config/settings.example.yaml  # template with placeholders
 ```
-
-Optional settings:
-```
-RENDER_DPI=150
-MAX_WORKERS=3
-```
+CLI flag `--config` overrides the path; otherwise defaults to `config/settings.yaml`.
 
 ## Data Models (Pydantic)
 

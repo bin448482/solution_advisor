@@ -22,3 +22,5 @@ dist/
 build/
 *.log
 .env
+# Local YAML config with secrets
+config/settings.yaml

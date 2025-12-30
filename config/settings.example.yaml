@@ -1,0 +1,10 @@
+llm_provider: openai
+llm_api_key: "sk-***redacted***"
+llm_base_url: https://api.openai.com/v1
+llm_model: gpt-4-vision-preview
+llm_temperature: 0.1
+
+render_dpi: 150
+max_workers: 3
+libreoffice_path: soffice
+pdftoppm_path: pdftoppm
