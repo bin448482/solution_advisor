@@ -1,291 +1,166 @@
-# PPT解析与项目画像系统 - MVP实施计划
+# PPT解析与项目画像系统 - 实施计划 (v2: RAG准备集成版)
 
 ## 项目概述
 
-实现一个自动化流水线，将项目介绍类PPT转换为结构化的项目画像：
+实现一个自动化流水线，将项目介绍类PPT转换为结构化的项目画像，并自动生成用于售前咨询RAG（检索增强生成）的向量化数据。
+
 - **输入**：PPTX文件（如 `ppts/ChatBI产品介绍_2025.pptx`）
-- **输出**：逐页图片 + 单页总结 + 项目画像（JSON格式）
-- **目标**：可追溯、可批处理、可运营
+- **输出**：
+  1. **可视化**：逐页图片 (PNG)
+  2. **结构化数据**：单页总结 (JSON) + 项目画像 (JSON)
+  3. **RAG数据**：向量数据库导入文件 (JSONL/JSON)，包含“语义文本”与“元数据”
+- **目标**：可追溯、可批处理、可运营、**即刻可搜**
 
 ## 技术选型
 
 - **语言**：Python 3.9+
-- **PPT渲染**：LibreOffice headless (PPTX → PDF → PNG)
+- **PPT渲染**：LibreOffice headless + Poppler
 - **文本提取**：python-pptx
-- **LLM框架**：LangChain（支持多种LLM提供商：OpenAI、Claude、本地模型等）
+- **LLM框架**：LangChain（支持多种LLM提供商）
 - **数据验证**：Pydantic 2.0+
 - **CLI框架**：Click
 
-## 核心依赖
-
-```
-python-pptx>=0.6.21
-Pillow>=10.0.0
-langchain>=0.1.0
-langchain-openai>=0.0.5
-langchain-anthropic>=0.1.0
-pydantic>=2.0.0
-click>=8.1.0
-python-dotenv>=1.0.0
-```
-
-## 系统架构
+## 系统架构 (更新)
 
 ```
 PPTX输入
   ↓
-[Renderer] → slides/001.png, 002.png, ...
+[Renderer] → slides/*.png
   ↓
-[Extractor] → 提取标题、文本、备注
+[Extractor] → 原始文本
   ↓
-[PageSummarizer] → page_summaries/001.json (并行处理)
+[PageSummarizer] → page_summaries/*.json (并行)
   ↓
 [ProfileGenerator] → doc_summary/project_profile.json
   ↓
-[Pipeline] → manifest.json (元数据+错误)
+[RAGPreparer] (新增) → embeddings/rag_documents.json
+  ↓
+[Pipeline] → manifest.json
 ```
 
-## 目录结构
+## 目录结构 (更新)
 
 ```
 src/
 ├── __init__.py
 ├── __main__.py                 # CLI入口
 ├── config.py                   # 配置管理
-├── models.py                   # Pydantic数据模型
+├── models.py                   # Pydantic数据模型 (含Manifest更新)
+├── rag.py                      # (新增) Embedding数据准备逻辑
+├── pipeline.py                 # (更新) 集成RAG准备步骤
 ├── renderer/
-│   ├── __init__.py
-│   ├── base.py                 # 抽象渲染器接口
 │   └── libreoffice.py          # LibreOffice实现
 ├── extractor/
-│   ├── __init__.py
 │   └── ppt_extractor.py        # PPT文本提取
 ├── summarizer/
-│   ├── __init__.py
 │   ├── llm_client.py           # LLM API封装
 │   ├── page_summarizer.py      # 单页总结
 │   └── profile_generator.py    # 项目画像生成
-├── pipeline.py                 # 主流程编排
 └── utils.py                    # 工具函数
-
-tests/
-├── conftest.py
-├── test_models.py
-├── test_renderer.py
-├── test_extractor.py
-└── test_pipeline_e2e.py
 ```
 
 ## 核心组件设计
 
 ### 1. 数据模型 (src/models.py)
 
-**SlideText**：单页文本提取结果
-- slide_no, title, text_content, notes
+**新增**：
+- **Manifest**: 增加 `rag_documents: int` 字段，记录生成文档数量。
 
-**PageSummary**：单页总结
-- slide_no, title, one_liner, bullets, details, entities, signals, evidence, confidence
+### 2. 渲染与提取 (src/renderer/, src/extractor/)
+*保持原有设计：LibreOffice 渲染 + python-pptx 提取*
 
-**ProjectProfile**：项目画像
-- project_name, positioning, target_users, core_value, core_capabilities, architecture, deployment, integrations, differentiators, cases, risks_and_limits, open_questions, evidence_map
+### 3. LLM 总结模块 (src/summarizer/)
+*保持原有设计：PageSummarizer 生成单页 JSON，ProfileGenerator 生成项目画像*
 
-**Manifest**：运行元数据
-- input_file, file_hash, timestamp, page_count, errors, duration
+### 4. RAG准备器 (src/rag.py) - 新增核心模块
 
-### 2. 渲染器 (src/renderer/)
+**功能**：将结构化数据转换为适合向量检索的文档格式（多粒度索引）。
 
-**LibreOffice实现**：
-1. 调用 `soffice --headless --convert-to pdf` 转换PPTX为PDF
-2. 使用 `pdftoppm` 将PDF转为PNG图片序列
-3. 生成固定宽度命名：001.png, 002.png, ...
-4. 返回图片路径列表
+**核心逻辑 (基于 Embedding设计文档)**：
+1.  **Slide Level (Detail Index)**：
+    - 读取 `PageSummary`
+    - 构建语义文本：`项目名 + 标题 + 核心总结 + 要点 + 详情`
+    - 注入元数据：`slide_no`, `page_type`, `entities`
+2.  **Project Level (Project Index)**：
+    - 读取 `ProjectProfile`
+    - 构建综述文本：`定位 + 价值 + 能力 + 差异化`
+    - 注入元数据：`level="project"`
+3.  **输出**：生成 `rag_documents.json`，列表包含所有待 Embedding 的对象。
 
-### 3. 文本提取器 (src/extractor/)
+### 5. 噪声处理与健壮性（新增）
 
-使用python-pptx读取：
-- 每页标题（slide.shapes.title）
-- 文本框内容（遍历text_frame）
-- 备注/讲稿（slide.notes_slide）
-
-### 4. 单页总结器 (src/summarizer/page_summarizer.py)
-
-**输入**：slide图片 + 提取的文本
-**处理**：通过LangChain调用多模态LLM（支持OpenAI GPT-4V、Claude等）
-**Prompt设计**：
-- 中文指令
-- 明确输出JSON schema
-- 包含示例
-- 要求标注置信度
-
-**输出**：PageSummary JSON
-
-**LangChain集成**：
-- 使用 `ChatOpenAI` 或 `ChatAnthropic` 等LangChain模型类
-- 支持通过配置切换不同LLM提供商
-- 利用LangChain的重试和错误处理机制
-
-### 5. 项目画像生成器 (src/summarizer/profile_generator.py)
-
-**输入**：所有PageSummary列表
-**处理**：调用LLM聚合分析
-**Prompt设计**：
-- 从全量总结中提取项目画像
-- 每个字段标注证据页码
-- 识别未覆盖的关键问题
-
-**输出**：ProjectProfile JSON
+- **解析容错**：`PageSummarizer._parse_json` 需兼容 LLM 返回的 `list`，当首元素为 `dict` 时取首元素再走 `_fill_defaults`，避免原始字符串落入 `details/bullets`。
+- **数据清洗钩子**：在生成 `rag_documents` 前，对疑似“嵌套 JSON 字符串”的 `details` 做解包，规则示例：
+  - 判定：`details` 以 `[` 或 `{` 开头，且包含常见键（如 `"slide_no"`, `"title"`, `"one_liner"`, `"bullets"` 等）时，尝试 `json.loads`。
+  - 解析：若结果为 `list[dict]` 取首元素；为 `dict` 则直接用；提取其中的 `details` 与 `bullets` 覆盖当前值。
+  - 失败回退：解包失败保持原文本，避免数据丢失。
+- **双通道信息源（可选增强）**：在单页摘要中新增 `image_caption` 字段存放纯视觉描述；RAG 文档优先使用 `image_caption + one_liner + bullets`，`details` 为补充，降低结构化失败噪声。
+- **验证**：`manifest` 持续记录 `page_summaries`、`rag_documents` 计数；若检测到回退（如 bullets 含 `[`、`"slide_no"`），将错误写入 `errors`，便于重跑或清洗。
 
 ### 6. 流程编排 (src/pipeline.py)
 
-**PPTPipeline类**：
-```python
-def run(pptx_path, output_dir, force_rerun=False):
-    # 1. 检查manifest（幂等性）
-    # 2. 渲染slides
-    # 3. 提取文本
-    # 4. 并行生成单页总结
-    # 5. 生成项目画像
-    # 6. 写入manifest
+**PPTPipeline 类更新**：
+- 在 `ProjectProfile` 生成后，调用 `src.rag` 模块。
+- 生成 RAG 文档并保存至 `embeddings/` 目录。
+- 统计生成数量并写入 `manifest.json`。
+
+## 实施步骤 (更新后)
+
+### Phase 1: 基础流水线 (已完成)
+- [x] Day 1: 项目基础 (`models.py`, `config.py`)
+- [x] Day 2: 渲染模块 (`renderer/`)
+- [x] Day 3: 文本提取 (`extractor/`)
+- [x] Day 4: LLM客户端 (`llm_client.py`)
+- [x] Day 5: 单页总结 (`page_summarizer.py`)
+- [x] Day 6: 项目画像 (`profile_generator.py`)
+
+### Phase 2: RAG数据集成 (当前阶段)
+- [x] **Day 7.1: RAG模块实现**
+    - 创建 `src/rag.py`
+    - 实现 `prepare_slide_embedding` (单页转向量文档)
+    - 实现 `prepare_project_embedding` (画像转向量文档)
+- [x] **Day 7.2: 流水线集成**
+    - 修改 `src/models.py` 增加 Manifest 字段
+    - 修改 `src/pipeline.py` 集成 RAG 模块
+    - 验证输出 `ppt_outputs/<name>/embeddings/rag_documents.json`
+
+### Phase 3: 交付与运维
+- [ ] **Day 8: 端到端测试与文档**
+    - 运行完整流程，检查 RAG 数据格式
+    - 编写使用文档，说明如何将 JSON 导入向量库 (Milvus/Chroma/ES)
+
+## 输出文件规范
+
+**embeddings/rag_documents.json** 示例：
+```json
+[
+  {
+    "id": "ChatBI_2025_slide_001",
+    "text": "项目: ChatBI...\n页面标题: 架构...\n关键点: ...",
+    "metadata": {
+      "source": "ChatBI_2025",
+      "slide_no": 1,
+      "page_type": ["architecture"],
+      "entities": ["LLM", "Python"],
+      "level": "slide"
+    },
+    "original_json": "{...}"
+  },
+  {
+    "id": "ChatBI_2025_overview",
+    "text": "项目综述: ChatBI...\n定位: ...",
+    "metadata": {
+      "level": "project"
+    },
+    "original_json": "{...}"
+  }
+]
 ```
-
-**错误处理**：
-- 关键错误（缺少依赖、配置）→ 立即失败
-- 单页错误 → 继续处理，记录到manifest
-- LLM API错误 → 利用LangChain内置重试机制（指数退避）
-
-### 7. CLI入口 (src/__main__.py)
-
-```bash
-python -m src --input <pptx> --output <dir> [--force] [--verbose]
-```
-
-**输出**：
-- 进度指示
-- 统计信息（页数、成功/失败、耗时）
-- manifest.json路径
-
-## 配置管理
-
-**.env文件**：
-```
-# LLM配置（LangChain）
-LLM_PROVIDER=openai              # 可选：openai, anthropic, local
-LLM_API_KEY=sk-...               # API密钥
-LLM_BASE_URL=https://api.openai.com/v1  # 可选：自定义API端点
-LLM_MODEL=gpt-4-vision-preview   # 模型名称
-LLM_TEMPERATURE=0.1              # 温度参数
-
-# 渲染配置
-RENDER_DPI=150
-MAX_WORKERS=3
-LIBREOFFICE_PATH=/usr/bin/soffice
-```
-
-**LangChain模型配置示例**：
-- OpenAI: `LLM_PROVIDER=openai`, `LLM_MODEL=gpt-4-vision-preview`
-- Claude: `LLM_PROVIDER=anthropic`, `LLM_MODEL=claude-3-opus-20240229`
-- 本地模型: `LLM_PROVIDER=local`, `LLM_BASE_URL=http://localhost:8000`
-
-**优先级**：CLI参数 > 环境变量 > 默认值
-
-## 实施步骤（8天计划）
-
-### Day 1: 项目基础
-- [ ] 创建目录结构
-- [ ] 编写 `requirements.txt`
-- [ ] 实现 `src/models.py`（所有Pydantic模型）
-- [ ] 实现 `src/config.py`（配置加载）
-- [ ] 实现 `src/utils.py`（文件hash、路径处理）
-
-### Day 2: 渲染模块
-- [ ] 实现 `src/renderer/base.py`（抽象接口）
-- [ ] 实现 `src/renderer/libreoffice.py`
-- [ ] 测试：ChatBI产品介绍_2025.pptx → slides/*.png
-- [ ] 验证：图片数量、命名、质量
-
-### Day 3: 文本提取
-- [ ] 实现 `src/extractor/ppt_extractor.py`
-- [ ] 测试：提取标题、文本、备注
-- [ ] 验证：结构化输出正确性
-
-### Day 4: LLM客户端
-- [ ] 实现 `src/summarizer/llm_client.py`（基于LangChain）
-- [ ] 支持多种LLM提供商（OpenAI、Claude等）
-- [ ] 配置LangChain模型初始化和切换逻辑
-- [ ] 测试：简单图片+文本prompt（验证多模态能力）
-
-### Day 5: 单页总结
-- [ ] 实现 `src/summarizer/page_summarizer.py`
-- [ ] 设计中文prompt（结构化输出）
-- [ ] 测试：2-3张样例slides
-- [ ] 迭代优化prompt质量
-
-### Day 6: 项目画像
-- [ ] 实现 `src/summarizer/profile_generator.py`
-- [ ] 设计聚合prompt
-- [ ] 测试：完整page summaries → profile
-- [ ] 验证：evidence_map正确性
-
-### Day 7: 流程编排
-- [ ] 实现 `src/pipeline.py`（主编排逻辑）
-- [ ] 实现 `src/__main__.py`（CLI）
-- [ ] 添加manifest.json生成
-- [ ] 端到端测试
-
-### Day 8: 测试与文档
-- [ ] 编写 `tests/test_pipeline_e2e.py`
-- [ ] 创建 `.env.example`
-- [ ] 编写 `README.md`（安装、使用说明）
-- [ ] 完整验收测试
-
-## 关键文件清单
-
-**必须创建的核心文件**：
-
-1. **src/models.py** - 数据模型定义（数据契约）
-2. **src/pipeline.py** - 主流程编排（系统核心）
-3. **src/summarizer/page_summarizer.py** - 单页总结（核心智能）
-4. **src/renderer/libreoffice.py** - 渲染实现（基础能力）
-5. **src/__main__.py** - CLI入口（用户界面）
-
-**支持文件**：
-- requirements.txt - 依赖管理
-- .env.example - 配置模板
-- README.md - 使用文档
 
 ## 验收标准
 
-**MVP完成标准**：
-1. ✅ 输入ChatBI产品介绍_2025.pptx，输出完整目录结构
-2. ✅ slides/目录包含所有页面PNG图片（命名正确）
-3. ✅ page_summaries/目录包含所有单页JSON（字段完整）
-4. ✅ doc_summary/project_profile.json生成（包含evidence_map）
-5. ✅ manifest.json记录元数据（页数、hash、耗时、错误）
-6. ✅ 单页失败不影响整体流程（错误记录在manifest）
-7. ✅ 二次运行跳过已完成步骤（幂等性）
-
-## 风险与对策
-
-**风险1：LibreOffice依赖**
-- 对策：提供详细安装文档（Windows/Mac/Linux）
-- 备选：手动PDF转换说明
-
-**风险2：LLM API成本**
-- 对策：限制并发数（MAX_WORKERS=3）
-- 对策：基于manifest缓存结果
-
-**风险3：中文质量**
-- 对策：使用GPT-4 Vision（多语言支持最佳）
-- 对策：prompt中明确中文指令
-
-**风险4：错误恢复**
-- 对策：单页失败继续处理
-- 对策：manifest详细记录错误
-- 对策：支持部分重跑（V1增强）
-
-## 下一步行动
-
-1. 确认LibreOffice安装（Windows环境）
-2. 获取LLM API密钥（OpenAI、Claude或其他兼容服务）
-3. 配置LangChain环境和模型提供商
-4. 开始Day 1实施：创建项目结构和基础模型
+1. ✅ `ppt_outputs` 下生成 `embeddings/rag_documents.json`。
+2. ✅ JSON 内容符合多粒度设计（包含 Slide 和 Project 两类文档）。
+3. ✅ 文本内容是自然的描述性语言，而非原始 JSON 字符串。
+4. ✅ 元数据包含用于过滤的关键字段（type, entities）。
+5. ✅ `manifest.json` 正确记录 `rag_documents` 数量。

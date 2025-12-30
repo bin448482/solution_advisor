@@ -49,3 +49,4 @@ class Manifest(BaseModel):
     provider: str
     model: str
     page_summaries: int
+    rag_documents: int = 0

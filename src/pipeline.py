@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 from src.config import Settings
 from src.extractor import extract_text
 from src.models import Manifest, PageSummary, SlideText
+from src.rag import prepare_project_embedding, prepare_slide_embedding
 from src.renderer import LibreOfficeRenderer, RenderError
 from src.summarizer import LLMClient, PageSummarizer, ProfileGenerator
 from src.utils import compute_sha256, ensure_dir, load_json, save_json
@@ -86,6 +87,26 @@ class PPTPipeline:
             except Exception as exc:  # noqa: BLE001
                 errors.append({"stage": "profile", "error": str(exc)})
 
+        # --- RAG Preparation Step ---
+        rag_docs: List[Dict] = []
+        rag_dir = output_dir / "embeddings"
+        ensure_dir(rag_dir)
+
+        if summaries and profile:
+            self._log("Preparing RAG documents ...")
+            try:
+                project_name = profile.project_name or pptx_path.stem
+                # 1. Slide embeddings
+                for summary in summaries:
+                    rag_docs.append(prepare_slide_embedding(project_name, summary))
+                # 2. Project embedding
+                rag_docs.append(prepare_project_embedding(project_name, profile))
+                
+                save_json(rag_docs, rag_dir / "rag_documents.json")
+            except Exception as exc: # noqa: BLE001
+                errors.append({"stage": "rag_prep", "error": str(exc)})
+        # ----------------------------
+
         duration = time.time() - start
         manifest = Manifest(
             input_file=str(pptx_path),
@@ -98,6 +119,7 @@ class PPTPipeline:
             provider=self.settings.llm_provider,
             model=self.settings.llm_model,
             page_summaries=len(summaries),
+            rag_documents=len(rag_docs),
         )
         save_json(manifest.model_dump(), manifest_path)
         return manifest.model_dump()
