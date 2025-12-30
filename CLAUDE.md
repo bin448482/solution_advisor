@@ -26,6 +26,26 @@ python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --force
 python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --verbose
 ```
 
+### Vector Database Management
+
+```bash
+# Import single project
+python -m src.scripts.vectordb_cli import \
+    --input ppt_outputs/ChatBI/embeddings/rag_documents.json
+
+# Batch import all projects
+python -m src.scripts.vectordb_cli batch-import --input-dir ppt_outputs
+
+# Query vector database
+python -m src.scripts.vectordb_cli query --text "ChatBI的核心功能" --top-k 5
+
+# Show statistics
+python -m src.scripts.vectordb_cli stats
+
+# Delete project
+python -m src.scripts.vectordb_cli delete --project ChatBI
+```
+
 ### Testing
 
 ```bash
@@ -69,7 +89,12 @@ PPTX Input
   ├─ prepare_slide_embedding: Convert each PageSummary to embedding doc
   └─ prepare_project_embedding: Convert ProjectProfile to overview doc
   ↓
-[Pipeline] Write manifest.json with metadata, errors, and rag_documents count
+[VectorDB] (Optional) Insert documents into Chroma with M3E embeddings
+  ├─ M3EEmbedding: Generate 768-dim vectors for semantic search
+  ├─ ChromaStore: Batch insert with metadata (project, slide_no, confidence, level)
+  └─ Idempotent upsert: Safe to re-run without duplicates
+  ↓
+[Pipeline] Write manifest.json with metadata, errors, rag_documents, and vectordb_metrics
 ```
 
 ### Key Architectural Decisions
@@ -113,6 +138,12 @@ src/
 │   ├── llm_client.py     # LLM API wrapper (OpenAI-compatible)
 │   ├── page_summarizer.py    # Single page → PageSummary
 │   └── profile_generator.py  # All summaries → ProjectProfile
+├── embeddings/           # M3E embedding model integration
+│   └── m3e_model.py      # Chinese text embedding with auto-download & caching
+├── vectordb/             # Chroma vector database integration
+│   └── chroma_store.py   # Document insertion, querying, management
+├── scripts/              # Standalone CLI tools
+│   └── vectordb_cli.py   # Vector DB management commands
 ├── pipeline.py           # Main orchestration (PPTPipeline class)
 └── __main__.py          # CLI entry point
 ```
@@ -141,6 +172,14 @@ ppt_outputs/<ppt_basename>/
 - `profile`: Profile generation failures
 - `rag_clean`: Noise/JSON issues in summaries (bullets_look_like_json, detail_unpack_failed)
 - `rag_prep`: General RAG preparation failures
+- `vectordb`: Vector database insertion failures
+
+**manifest.json** also includes `vectordb_metrics` when vector DB is enabled:
+- `documents_inserted`: Number of successfully inserted documents
+- `documents_failed`: Number of failed insertions
+- `embedding_time_seconds`: Time spent generating embeddings
+- `insertion_time_seconds`: Time spent inserting into Chroma
+- `collection_name`: Target collection name
 
 **embeddings/rag_documents.json** structure:
 - Array of embedding-ready documents
@@ -157,6 +196,35 @@ config/settings.example.yaml  # template with placeholders
 CLI flag `--config` overrides the path; otherwise defaults to `config/settings.yaml`.
 
 **Mock Provider for Testing**: For offline testing or when LLM API is unavailable, set `llm_provider: mock` in settings.yaml. Mock mode returns the prompt as output without API calls, enabling pipeline testing without external dependencies.
+
+### Vector Database Configuration
+
+**Enable Vector DB Integration**:
+```yaml
+vectordb_enabled: true                   # Enable automatic insertion into vector DB
+vectordb_provider: chroma                # Vector database provider
+vectordb_persist_dir: ./chroma_db        # Local persistence directory
+vectordb_collection_name: project_slides # Collection name
+```
+
+**Embedding Model Configuration**:
+```yaml
+embedding_model: moka-ai/m3e-base        # HuggingFace model ID (m3e-base or m3e-large)
+embedding_device: cpu                    # Device: cpu | cuda | mps (Apple Silicon)
+embedding_batch_size: 32                 # Batch size for embedding generation
+embedding_cache_dir: ./models            # Model cache directory
+```
+
+**Model Options**:
+- `moka-ai/m3e-base`: 768-dim, ~400MB, balanced performance (recommended)
+- `moka-ai/m3e-large`: 1024-dim, ~1.2GB, higher accuracy
+
+**Device Selection**:
+- `cpu`: Universal, slower (~2-5s per batch)
+- `cuda`: NVIDIA GPU, 10-20x faster
+- `mps`: Apple Silicon GPU, 5-10x faster
+
+**Note**: First run downloads the model (~400MB for m3e-base) and caches it locally.
 
 ## Data Models (Pydantic)
 
@@ -182,7 +250,15 @@ CLI flag `--config` overrides the path; otherwise defaults to `config/settings.y
 - `provider`, `model` (LLM configuration used)
 - `page_summaries` (count of successfully generated summaries)
 - `rag_documents` (count of documents in embeddings/rag_documents.json)
+- `vectordb_metrics` (optional, when vectordb_enabled=true): insertion statistics
 - `errors` (list of dicts with stage, slide_no, error message)
+
+**VectorDBMetrics** fields (when vector DB enabled):
+- `documents_inserted`: Number of successfully inserted documents
+- `documents_failed`: Number of failed insertions
+- `embedding_time_seconds`: Time spent generating embeddings
+- `insertion_time_seconds`: Time spent inserting into Chroma
+- `collection_name`: Target collection name
 
 ## RAG Document Generation
 

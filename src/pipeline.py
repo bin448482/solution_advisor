@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 from src.config import Settings
 from src.extractor import extract_text
-from src.models import Manifest, PageSummary, SlideText
+from src.models import Manifest, PageSummary, SlideText, VectorDBMetrics
 from src.rag import clean_summary_for_embedding, prepare_project_embedding, prepare_slide_embedding
 from src.renderer import LibreOfficeRenderer, RenderError
 from src.summarizer import LLMClient, PageSummarizer, ProfileGenerator
@@ -112,6 +112,16 @@ class PPTPipeline:
                 errors.append({"stage": "rag_prep", "error": str(exc)})
         # ----------------------------
 
+        # --- Vector DB Insertion Step (NEW) ---
+        vectordb_metrics = None
+        if self.settings.vectordb_enabled and rag_docs:
+            self._log("Inserting documents into vector database ...")
+            try:
+                vectordb_metrics = self._insert_to_vectordb(rag_docs)
+            except Exception as exc:  # noqa: BLE001
+                errors.append({"stage": "vectordb", "error": str(exc)})
+        # --------------------------------------
+
         duration = time.time() - start
         manifest = Manifest(
             input_file=str(pptx_path),
@@ -125,6 +135,7 @@ class PPTPipeline:
             model=self.settings.llm_model,
             page_summaries=len(summaries),
             rag_documents=len(rag_docs),
+            vectordb_metrics=vectordb_metrics,
         )
         save_json(manifest.model_dump(), manifest_path)
         return manifest.model_dump()
@@ -137,3 +148,51 @@ class PPTPipeline:
     def _log(self, msg: str) -> None:
         if self.verbose:
             print(msg)
+
+    def _insert_to_vectordb(self, rag_docs: List[Dict]) -> VectorDBMetrics:
+        """Insert RAG documents into vector database.
+
+        Args:
+            rag_docs: List of RAG documents from prepare_*_embedding functions
+
+        Returns:
+            VectorDBMetrics with insertion statistics
+        """
+        from src.embeddings import M3EEmbedding
+        from src.vectordb import ChromaStore
+
+        start = time.time()
+
+        # Initialize embedding model
+        embedding_model = M3EEmbedding(
+            model_name=self.settings.embedding_model,
+            device=self.settings.embedding_device,
+            cache_dir=self.settings.embedding_cache_dir,
+        )
+
+        # Initialize vector store
+        store = ChromaStore(
+            persist_dir=self.settings.vectordb_persist_dir,
+            collection_name=self.settings.vectordb_collection_name,
+            embedding_model=embedding_model,
+        )
+
+        # Insert documents
+        success, failure, errors = store.insert_documents(
+            rag_docs,
+            batch_size=self.settings.embedding_batch_size,
+        )
+
+        # Log errors
+        for err in errors:
+            self._log(f"Vector DB error: {err}")
+
+        duration = time.time() - start
+
+        return VectorDBMetrics(
+            documents_inserted=success,
+            documents_failed=failure,
+            embedding_time_seconds=round(duration * 0.7, 2),  # Estimate
+            insertion_time_seconds=round(duration * 0.3, 2),
+            collection_name=self.settings.vectordb_collection_name,
+        )

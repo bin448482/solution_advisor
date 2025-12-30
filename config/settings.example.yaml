@@ -8,3 +8,15 @@ render_dpi: 150
 max_workers: 3
 libreoffice_path: soffice
 pdftoppm_path: pdftoppm
+
+# Vector Database Configuration
+vectordb_enabled: false                  # Set to true to enable vector DB integration
+vectordb_provider: chroma                # Vector database provider (currently only chroma)
+vectordb_persist_dir: ./chroma_db        # Local persistence directory
+vectordb_collection_name: project_slides # Collection name
+
+# Embedding Configuration
+embedding_model: moka-ai/m3e-base        # HuggingFace model ID (m3e-base or m3e-large)
+embedding_device: cpu                    # Device: cpu | cuda | mps (Apple Silicon)
+embedding_batch_size: 32                 # Batch size for embedding generation
+embedding_cache_dir: ./models            # Model cache directory

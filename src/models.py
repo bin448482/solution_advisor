@@ -39,6 +39,16 @@ class ProjectProfile(BaseModel):
     evidence_map: Dict[str, List[int]] = Field(default_factory=dict)
 
 
+class VectorDBMetrics(BaseModel):
+    """Metrics for vector database operations."""
+
+    documents_inserted: int = 0
+    documents_failed: int = 0
+    embedding_time_seconds: float = 0.0
+    insertion_time_seconds: float = 0.0
+    collection_name: str = ""
+
+
 class Manifest(BaseModel):
     input_file: str
     file_hash: str
@@ -51,3 +61,4 @@ class Manifest(BaseModel):
     model: str
     page_summaries: int
     rag_documents: int = 0
+    vectordb_metrics: Optional[VectorDBMetrics] = None

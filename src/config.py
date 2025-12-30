@@ -19,6 +19,18 @@ class Settings(BaseModel):
     libreoffice_path: str = Field(default="soffice")
     pdftoppm_path: str = Field(default="pdftoppm")
 
+    # Vector Database Configuration
+    vectordb_enabled: bool = Field(default=False)
+    vectordb_provider: str = Field(default="chroma")
+    vectordb_persist_dir: str = Field(default="./chroma_db")
+    vectordb_collection_name: str = Field(default="project_slides")
+
+    # Embedding Configuration
+    embedding_model: str = Field(default="moka-ai/m3e-base")
+    embedding_device: str = Field(default="cpu")
+    embedding_batch_size: int = Field(default=32)
+    embedding_cache_dir: str = Field(default="./models")
+
     @classmethod
     def from_yaml(cls, path: Path | str = Path("config/settings.yaml")) -> "Settings":
         """Load settings from YAML; raise if missing to avoid silent defaults."""
