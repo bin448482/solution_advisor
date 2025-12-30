@@ -64,6 +64,8 @@ PPTX Input
   ↓
 [ProfileGenerator] LLM: Aggregate summaries → project profile with evidence map
   ↓
+[RAGPreparer] Slide-level + project-level docs → embeddings/rag_documents.json
+  ↓
 [Pipeline] Write manifest.json with metadata and errors
 ```
 
@@ -115,10 +117,16 @@ ppt_outputs/<ppt_basename>/
 │   ├── 001.json, 002.json, ...
 ├── doc_summary/
 │   └── project_profile.json
+├── embeddings/
+│   └── rag_documents.json
 └── manifest.json
 ```
 
 **manifest.json** contains: input file hash, timestamp, page count, processing duration, and error list (slide_no, stage, error message).
+
+**Noise handling & RAG prep**
+- PageSummarizer accepts dict or list JSON responses and captures optional `image_caption` for visual grounding.
+- RAG step auto-unnests JSON-looking `details`, flags noisy bullets into `manifest.errors` (stage: `rag_clean`), and records `rag_documents` count.
 
 ## Configuration
 

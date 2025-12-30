@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 from src.config import Settings
 from src.extractor import extract_text
 from src.models import Manifest, PageSummary, SlideText
-from src.rag import prepare_project_embedding, prepare_slide_embedding
+from src.rag import clean_summary_for_embedding, prepare_project_embedding, prepare_slide_embedding
 from src.renderer import LibreOfficeRenderer, RenderError
 from src.summarizer import LLMClient, PageSummarizer, ProfileGenerator
 from src.utils import compute_sha256, ensure_dir, load_json, save_json
@@ -98,12 +98,17 @@ class PPTPipeline:
                 project_name = profile.project_name or pptx_path.stem
                 # 1. Slide embeddings
                 for summary in summaries:
-                    rag_docs.append(prepare_slide_embedding(project_name, summary))
+                    cleaned_summary, issues = clean_summary_for_embedding(summary)
+                    rag_docs.append(prepare_slide_embedding(project_name, cleaned_summary))
+                    for issue in issues:
+                        errors.append(
+                            {"stage": "rag_clean", "slide_no": summary.slide_no, "error": issue}
+                        )
                 # 2. Project embedding
                 rag_docs.append(prepare_project_embedding(project_name, profile))
-                
+
                 save_json(rag_docs, rag_dir / "rag_documents.json")
-            except Exception as exc: # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 errors.append({"stage": "rag_prep", "error": str(exc)})
         # ----------------------------
 

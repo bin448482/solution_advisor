@@ -28,3 +28,4 @@ def test_page_summary_model_defaults():
     summary = PageSummary(slide_no=1, one_liner="x")
     assert summary.confidence == 0.0
     assert summary.bullets == []
+    assert summary.image_caption is None

@@ -51,5 +51,6 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 ## Code status (MVP skeleton)
 - Python pipeline lives in `src/` with CLI entry `python -m src --input ppts/... --output ppt_outputs/... --force`.
 - Core pieces: rendering (`renderer/libreoffice.py`), text extraction (`extractor/ppt_extractor.py`), LLM summarization (`summarizer/`), orchestration (`pipeline.py`), config (`config.py`), CLI (`__main__.py`), utilities (`utils.py`).
+- RAG 文档生成：`rag.py` + `pipeline.py` 将单页/画像转换为 `ppt_outputs/<ppt>/embeddings/rag_documents.json`，同时在 manifest 中记录 `rag_documents` 数量。
 - Tests under `tests/` include model sanity and an e2e smoke that requires `soffice` + `pdftoppm` and uses `LLM_PROVIDER=mock`.
 - Dependencies listed in `requirements.txt`; environment template in `.env.example`; usage in `README.md`.

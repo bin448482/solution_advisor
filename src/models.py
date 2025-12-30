@@ -15,6 +15,7 @@ class PageSummary(BaseModel):
     title: Optional[str] = None
     one_liner: str = ""
     bullets: List[str] = Field(default_factory=list)
+    image_caption: Optional[str] = None
     details: Optional[str] = None
     entities: List[str] = Field(default_factory=list)
     signals: List[str] = Field(default_factory=list)

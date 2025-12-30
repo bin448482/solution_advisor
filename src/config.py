@@ -1,17 +1,32 @@
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application configuration loaded from environment or .env."""
 
-    llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
-    llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
-    llm_base_url: str | None = Field(default=None, alias="LLM_BASE_URL")
-    llm_model: str = Field(default="gpt-4-vision-preview", alias="LLM_MODEL")
-    llm_temperature: float = Field(default=0.1, alias="LLM_TEMPERATURE")
+    llm_provider: str = Field(
+        default="openai",
+        validation_alias=AliasChoices("LLM_PROVIDER", "OPENAI_PROVIDER"),
+    )
+    llm_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LLM_API_KEY", "OPENAI_API_KEY"),
+    )
+    llm_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LLM_BASE_URL", "OPENAI_BASE_URL"),
+    )
+    llm_model: str = Field(
+        default="gpt-4-vision-preview",
+        validation_alias=AliasChoices("LLM_MODEL", "OPENAI_MODEL"),
+    )
+    llm_temperature: float = Field(
+        default=0.1,
+        validation_alias=AliasChoices("LLM_TEMPERATURE", "OPENAI_TEMPERATURE"),
+    )
 
     render_dpi: int = Field(default=150, alias="RENDER_DPI")
     max_workers: int = Field(default=3, alias="MAX_WORKERS")

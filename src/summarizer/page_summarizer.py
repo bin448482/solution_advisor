@@ -11,6 +11,7 @@ PAGE_PROMPT = """
 - title (string)
 - one_liner (string)：一句话中文总结
 - bullets (string[])：3-6 条关键信息
+- image_caption (string)：基于视觉的简短描述（无结构化失败时可为空）
 - details (string)
 - entities (string[])：提到的机构、产品、角色
 - signals (string[])：发现的信号/指标
@@ -44,6 +45,8 @@ class PageSummarizer:
     def _parse_json(self, raw: str, slide: SlideText) -> Dict:
         try:
             parsed = json.loads(raw)
+            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                parsed = parsed[0]
             if isinstance(parsed, dict):
                 return self._fill_defaults(parsed, slide)
         except json.JSONDecodeError:
@@ -55,11 +58,13 @@ class PageSummarizer:
         bullets: List[str] = data.get("bullets") or []
         if fallback_text and not bullets:
             bullets = [line.strip() for line in fallback_text.splitlines() if line.strip()][:5]
+        image_caption = data.get("image_caption")
         return {
             "slide_no": data.get("slide_no", slide.slide_no),
             "title": data.get("title", slide.title),
             "one_liner": data.get("one_liner") or (slide.text_content.split("\n")[0][:80] if slide.text_content else "暂无摘要"),
             "bullets": bullets,
+            "image_caption": image_caption,
             "details": data.get("details") or fallback_text,
             "entities": data.get("entities") or [],
             "signals": data.get("signals") or [],
@@ -76,6 +81,7 @@ class PageSummarizer:
             title=slide.title,
             one_liner=one_liner,
             bullets=bullets,
+            image_caption=one_liner,
             details=None,
             entities=[],
             signals=[],
