@@ -60,7 +60,8 @@ class PageSummarizer:
             bullets = [line.strip() for line in fallback_text.splitlines() if line.strip()][:5]
         image_caption = data.get("image_caption")
         return {
-            "slide_no": data.get("slide_no", slide.slide_no),
+            # 强制使用管线内的页码，避免模型输出重复或错误的 slide_no
+            "slide_no": slide.slide_no,
             "title": data.get("title", slide.title),
             "one_liner": data.get("one_liner") or (slide.text_content.split("\n")[0][:80] if slide.text_content else "暂无摘要"),
             "bullets": bullets,
