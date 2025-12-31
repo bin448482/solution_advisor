@@ -1,4 +1,4 @@
-# Repository Guidelines
+﻿# Repository Guidelines
 
 This repository is currently **document- and asset-driven**: it stores project PPTs and design/requirements docs, plus generated snapshot outputs.
 
@@ -19,6 +19,7 @@ There is **no build/test runner committed yet**. Common repo checks:
 - `git status` — confirm only intended files are staged/modified.
 - `find docs -name "*.md" -maxdepth 1` — list key docs for review.
 - `ls -la ppts ppt_outputs` — verify inputs vs generated artifacts.
+- `python -m src.scripts.qa_cli -q "ChatBI的核心功能是什么" [-p <项目名>] --config config/settings.yaml` — 运行 RAG 问答 CLI（top_k/top_n/tau 可调）。
 
 When adding an automation pipeline (PPT→images→summaries), provide a single entrypoint, e.g. `python -m <module> --input ppts/... --out ppt_outputs/...`.
 
@@ -53,5 +54,6 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 - Python pipeline lives in `src/` with CLI entry `python -m src --input ppts/... --output ppt_outputs/... --force`.
 - Core pieces: rendering (`renderer/libreoffice.py`), text extraction (`extractor/ppt_extractor.py`), LLM summarization (`summarizer/`), orchestration (`pipeline.py`), config (`config.py`), CLI (`__main__.py`), utilities (`utils.py`).
 - RAG 文档生成：`rag.py` + `pipeline.py` 将单页/画像转换为 `ppt_outputs/<ppt>/embeddings/rag_documents.json`，同时在 manifest 中记录 `rag_documents` 数量。
+- QA 问答：`src/qa/qa_engine.py` + `src/scripts/qa_cli.py`，调用 `ChromaStore.query_with_guardrails` + `LLMClient.generate`，默认 top_k=8 / top_n=5 / tau=0.5，返回 `answer/sources/status`。
 - Tests under `tests/` include model sanity and an e2e smoke that requires `soffice` + `pdftoppm` and uses `LLM_PROVIDER=mock`.
 - Dependencies listed in `requirements.txt`; config template in `config/settings.example.yaml`; usage in `README.md`.

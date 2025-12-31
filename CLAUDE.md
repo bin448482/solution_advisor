@@ -55,6 +55,16 @@ python -m src.scripts.vectordb_cli delete --project ChatBI
 - page_type 归一：查询阶段将 page_type 归一到 data_sources/deployment/api/performance/tech_stack/architecture，再用于加分与展示。
 - 测试脚本：`tmp_run_tests.py` 直接调用该包装函数，输出 `tmp_embedding_test_round1.json`。
 
+### Running the QA CLI (RAG问答)
+
+```bash
+python -m src.scripts.qa_cli -q ChatBI的核心功能是什么 -p ChatBI --config config/settings.yaml --top-k 8 --top-n 5 --tau 0.5
+```
+
+- 输入：问题必填；可选 project 过滤。
+- 输出：answer + sources + status（success/no_context/error）。
+- 依赖：已导入的 Chroma 向量库（ppt_outputs/*/embeddings/rag_documents.json），共享 Settings/LLMClient。
+
 ### Testing
 
 ```bash
@@ -147,12 +157,15 @@ src/
 │   ├── llm_client.py     # LLM API wrapper (OpenAI-compatible)
 │   ├── page_summarizer.py    # Single page → PageSummary
 │   └── profile_generator.py  # All summaries → ProjectProfile
+├── qa/                   # QAEngine: vector检索 + 提示构建
+│   └── qa_engine.py      # answer(question) → answer/sources/status
 ├── embeddings/           # M3E embedding model integration
 │   └── m3e_model.py      # Chinese text embedding with auto-download & caching
 ├── vectordb/             # Chroma vector database integration
 │   └── chroma_store.py   # Document insertion, querying, management
 ├── scripts/              # Standalone CLI tools
-│   └── vectordb_cli.py   # Vector DB management commands
+│   ├── vectordb_cli.py   # Vector DB management commands
+│   └── qa_cli.py         # Q&A CLI (vector retrieval + LLM)
 ├── pipeline.py           # Main orchestration (PPTPipeline class)
 └── __main__.py          # CLI entry point
 ```
