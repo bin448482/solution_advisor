@@ -25,14 +25,18 @@ def _classify_page_types(summary: PageSummary) -> List[str]:
     tags: List[str] = []
     if has_any(["数据源", "data source", "数据来源", "库表"]):
         tags.append("data_sources")
-    if has_any(["部署", "deployment", "上线", "交付", "安装", "私有化", "云原生", "k8s", "kubernetes"]):
+    cloud_native_hits = has_any(["云原生", "cloud-native", "cloud native", "k8s", "kubernetes", "容器化"])
+    if has_any(["部署", "deployment", "上线", "交付", "安装", "私有化"]) or cloud_native_hits:
         tags.append("deployment")
     if has_any(["接口", "api", "对接", "集成", "sdk", "webhook", "rest", "graphql"]):
         tags.append("api")
     if has_any(["性能", "performance", "qps", "tps", "延迟", "latency", "吞吐", "响应时间", "压测", "benchmark"]):
         tags.append("performance")
-    if has_any(["技术栈", "tech stack", "架构", "architecture", "系统架构", "平台架构"]):
+    if has_any(["技术栈", "tech stack", "架构", "architecture", "系统架构", "平台架构", "混合架构"]):
         tags.append("tech_stack")
+        tags.append("architecture")
+    if cloud_native_hits:
+        tags.append("cloud_native")
     if has_any(["定位", "核心价值", "差异化", "价值主张", "定位"]):
         tags.append("positioning")
     if has_any(["功能", "能力", "特性", "亮点"]):
