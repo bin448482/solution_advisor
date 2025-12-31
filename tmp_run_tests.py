@@ -1,14 +1,38 @@
 ﻿# coding: utf-8
 import json
 from textwrap import shorten
+from typing import Any, Dict, List, Optional
+
 from src.config import Settings
 from src.embeddings import M3EEmbedding
 from src.vectordb import ChromaStore
 
-settings = Settings.from_yaml('config/settings.yaml')
-settings = settings.with_overrides(vectordb_collection_name='project_slides')
-embedding = M3EEmbedding(model_name=settings.embedding_model, device=settings.embedding_device, cache_dir=settings.embedding_cache_dir)
-store = ChromaStore(persist_dir=settings.vectordb_persist_dir, collection_name=settings.vectordb_collection_name, embedding_model=embedding)
+settings = Settings.from_yaml("config/settings.yaml")
+settings = settings.with_overrides(vectordb_collection_name="project_slides")
+embedding = M3EEmbedding(
+    model_name=settings.embedding_model,
+    device=settings.embedding_device,
+    cache_dir=settings.embedding_cache_dir,
+)
+store = ChromaStore(
+    persist_dir=settings.vectordb_persist_dir,
+    collection_name=settings.vectordb_collection_name,
+    embedding_model=embedding,
+)
+
+# ---- Retrieval knobs for this round ----
+TOP_K = 8  # wider recall, rerank, then keep top 5
+TOP_N_DISPLAY = 5
+TAU = 0.5  # similarity threshold; below this we return “未找到相关内容”
+
+
+def _default_project_filter(store: ChromaStore) -> Optional[Dict[str, Any]]:
+    """Default to single-project filter to reduce noise; falls back to None."""
+    projects = store.list_projects()
+    if not projects:
+        return None
+    # Prefer the only project; if multiple, keep first for test consistency
+    return {"project_name": projects[0]}
 
 queries = [
     ("直接事实", "ChatBI的核心功能是什么？"),
@@ -38,21 +62,38 @@ queries = [
 ]
 
 report = []
+project_filter = _default_project_filter(store)
 for category, q in queries:
-    results = store.query(q, n_results=3, where=None)
+    guardrail_results = store.query_with_guardrails(
+        q,
+        top_k=TOP_K,
+        top_n=TOP_N_DISPLAY,
+        tau=TAU,
+        where=project_filter,
+    )
+
     entry = {"category": category, "query": q, "results": []}
-    for r in results:
-        sim = 1 - r['distance'] if r.get('distance') is not None else None
-        entry['results'].append({
-            "id": r['id'],
-            "project": r['metadata'].get('project_name'),
-            "slide": r['metadata'].get('slide_no'),
-            "level": r['metadata'].get('level'),
-            "similarity": round(sim, 4) if sim is not None else None,
-            "text": shorten(r['document'].replace('\n',' '), width=160, placeholder='...'),
-        })
+
+    if not guardrail_results:
+        entry["results"].append({"message": "未找到相关内容"})
+        report.append(entry)
+        continue
+
+    for r in guardrail_results:
+        entry["results"].append(
+            {
+                "id": r["id"],
+                "project": r["metadata"].get("project_name"),
+                "slide": r["metadata"].get("slide_no"),
+                "level": r["metadata"].get("level"),
+                "page_type": r["metadata"].get("page_type"),
+                "similarity": round(r["similarity"], 4),
+                "score": round(r["score"], 4),
+                "text": shorten(r["document"].replace("\n", " "), width=200, placeholder="..."),
+            }
+        )
     report.append(entry)
 
-with open('tmp_embedding_test_round1.json','w',encoding='utf-8') as f:
-    json.dump(report,f,ensure_ascii=False,indent=2)
-print('saved tmp_embedding_test_round1.json')
+with open("tmp_embedding_test_round1.json", "w", encoding="utf-8") as f:
+    json.dump(report, f, ensure_ascii=False, indent=2)
+print("saved tmp_embedding_test_round1.json")

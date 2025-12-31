@@ -46,6 +46,15 @@ python -m src.scripts.vectordb_cli stats
 python -m src.scripts.vectordb_cli delete --project ChatBI
 ```
 
+### Retrieval Defaults & Guardrails（生产/测试共用）
+
+- 包装函数：`ChromaStore.query_with_guardrails(text, project_name=None, where=None, top_k=8, top_n=5, tau=0.5)`（src/vectordb/chroma_store.py）。
+- 项目过滤：若未传 where，单项目场景自动过滤；多项目可传 `project_name` 或自定义 `where`。
+- 召回与重排：`top_k=8` 召回 → 相似度 + 细节页/slide 加分 → 取前 5。
+- 阈值护栏：Top-1 相似度 `< 0.5` 返回空列表（由上层决定“未找到相关内容”的文案）。
+- page_type 归一：查询阶段将 page_type 归一到 data_sources/deployment/api/performance/tech_stack/architecture，再用于加分与展示。
+- 测试脚本：`tmp_run_tests.py` 直接调用该包装函数，输出 `tmp_embedding_test_round1.json`。
+
 ### Testing
 
 ```bash

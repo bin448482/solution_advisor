@@ -4,6 +4,51 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.models import PageSummary, ProjectProfile
 
 
+def _classify_page_types(summary: PageSummary) -> List[str]:
+    """Add canonical page_type tags based on slide content."""
+    text_fields: List[str] = []
+    for field in [summary.title, summary.one_liner, summary.details]:
+        if field:
+            text_fields.append(field)
+    if summary.bullets:
+        text_fields.extend(summary.bullets)
+    if summary.signals:
+        text_fields.extend(summary.signals)
+    if summary.entities:
+        text_fields.extend(summary.entities)
+
+    joined = " ".join(text_fields).lower()
+
+    def has_any(keywords: List[str]) -> bool:
+        return any(k.lower() in joined for k in keywords)
+
+    tags: List[str] = []
+    if has_any(["数据源", "data source", "数据来源", "库表"]):
+        tags.append("data_sources")
+    if has_any(["部署", "deployment", "上线", "交付", "安装", "私有化", "云原生", "k8s", "kubernetes"]):
+        tags.append("deployment")
+    if has_any(["接口", "api", "对接", "集成", "sdk", "webhook", "rest", "graphql"]):
+        tags.append("api")
+    if has_any(["性能", "performance", "qps", "tps", "延迟", "latency", "吞吐", "响应时间", "压测", "benchmark"]):
+        tags.append("performance")
+    if has_any(["技术栈", "tech stack", "架构", "architecture", "系统架构", "平台架构"]):
+        tags.append("tech_stack")
+    if has_any(["定位", "核心价值", "差异化", "价值主张", "定位"]):
+        tags.append("positioning")
+    if has_any(["功能", "能力", "特性", "亮点"]):
+        tags.append("features")
+    if has_any(["案例", "客户", "poc", "试点", "续费"]):
+        tags.append("cases")
+    if has_any(["价格", "收费", "定价", "报价", "成本"]):
+        tags.append("pricing")
+    if has_any(["安全", "合规", "权限", "风控", "加密"]):
+        tags.append("security")
+    if has_any(["目录", "概览", "概述", "总览", "introduction", "背景", "关于", "about"]):
+        tags.append("overview")
+
+    return list(dict.fromkeys(tags))  # de-duplicate, keep order
+
+
 def prepare_slide_embedding(project_name: str, summary: PageSummary) -> Dict[str, Any]:
     """
     Convert a PageSummary into a document ready for vector embedding.
@@ -30,11 +75,13 @@ def prepare_slide_embedding(project_name: str, summary: PageSummary) -> Dict[str
         text_content += f"关键词: {', '.join(summary.entities)}\n"
 
     # 2. Construct Metadata (For Filtering)
+    canonical_page_types = _classify_page_types(summary)
+
     metadata = {
         "project_name": project_name,
         "source": project_name, # Alias for consistency
         "slide_no": summary.slide_no,
-        "page_type": summary.signals,
+        "page_type": canonical_page_types + (summary.signals or []),
         "entities": summary.entities,
         "confidence": summary.confidence,
         "level": "slide"

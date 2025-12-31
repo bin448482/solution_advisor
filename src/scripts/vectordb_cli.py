@@ -227,8 +227,24 @@ def stats(collection: str, config: str):
 @click.option("--collection", default="project_slides", help="Collection name")
 @click.option("--config", default="config/settings.yaml", help="Config file path")
 @click.option("--top-k", default=5, help="Number of results")
+@click.option("--top-n", default=None, type=int, help="Final results after rerank (default: same as top-k)")
+@click.option("--tau", default=0.5, type=float, help="Similarity threshold for guardrails (default: 0.5)")
+@click.option(
+    "--guardrails/--no-guardrails",
+    default=True,
+    help="Use guardrailed query (threshold + rerank). Default: on.",
+)
 @click.option("--project", default=None, help="Filter by project name")
-def query(text: str, collection: str, config: str, top_k: int, project: str):
+def query(
+    text: str,
+    collection: str,
+    config: str,
+    top_k: int,
+    top_n: int | None,
+    tau: float,
+    guardrails: bool,
+    project: str,
+):
     """Query the vector database."""
     try:
         # Load config
@@ -253,21 +269,41 @@ def query(text: str, collection: str, config: str, top_k: int, project: str):
         # Build filter
         where = {"project_name": project} if project else None
 
-        # Query
         click.echo(f"\nQuerying: '{text}'")
-        if where:
-            click.echo(f"Filter: {where}")
+        if project:
+            click.echo(f"Filter: project={project}")
 
-        results = store.query(query_text=text, n_results=top_k, where=where)
+        if guardrails:
+            final_top_n = top_n if top_n is not None else top_k
+            results = store.query_with_guardrails(
+                query_text=text,
+                top_k=top_k,
+                top_n=final_top_n,
+                tau=tau,
+                project_name=project,
+                where=where,
+            )
+        else:
+            results = store.query(query_text=text, n_results=top_k, where=where)
+
+        # Handle guardrail "no result" message
+        if results and isinstance(results[0], dict) and "message" in results[0]:
+            click.echo(f"\n{results[0]['message']} (top1_similarity={results[0].get('top1_similarity')})")
+            return
 
         click.echo(f"\nFound {len(results)} results:\n")
         for i, result in enumerate(results, 1):
+            distance = result.get("distance")
+            similarity = result.get("similarity")
             click.echo(f"[{i}] ID: {result['id']}")
-            click.echo(f"    Distance: {result['distance']:.4f}")
-            click.echo(f"    Project: {result['metadata'].get('project_name', 'N/A')}")
-            click.echo(f"    Slide: {result['metadata'].get('slide_no', 'N/A')}")
-            click.echo(f"    Level: {result['metadata'].get('level', 'N/A')}")
-            click.echo(f"    Text: {result['document'][:150]}...")
+            if distance is not None:
+                click.echo(f"    Distance: {distance:.4f}")
+            if similarity is not None:
+                click.echo(f"    Similarity: {similarity:.4f}")
+            click.echo(f"    Project: {result.get('metadata', {}).get('project_name', 'N/A')}")
+            click.echo(f"    Slide: {result.get('metadata', {}).get('slide_no', 'N/A')}")
+            click.echo(f"    Level: {result.get('metadata', {}).get('level', 'N/A')}")
+            click.echo(f"    Text: {result.get('document', '')[:150]}...")
             click.echo()
 
     except Exception as e:

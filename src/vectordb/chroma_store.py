@@ -190,6 +190,238 @@ class ChromaStore:
 
         return formatted_results
 
+    # ---- Guardrailed query with lightweight rerank ----
+    def query_with_guardrails(
+        self,
+        query_text: str,
+        *,
+        project_name: Optional[str] = None,
+        where: Optional[Dict[str, Any]] = None,
+        top_k: int = 8,
+        top_n: int = 5,
+        tau: float = 0.5,
+        detail_keywords: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Query with default project filter, detail-page rerank, and similarity threshold.
+
+        Returns:
+            List of result dicts enriched with similarity/score; empty list when below threshold.
+        """
+        if detail_keywords is None:
+            detail_keywords = ["data source", "数据源", "deployment", "部署", "api", "接口", "performance", "性能", "tech stack", "技术栈"]
+
+        where_clause = self._build_where(project_name, where)
+        raw_results = self.query(query_text, n_results=top_k, where=where_clause)
+
+        if not raw_results:
+            return []
+
+        scored = []
+        for r in raw_results:
+            similarity = 1 - r["distance"] if r.get("distance") is not None else 0
+            meta = r.get("metadata", {}) or {}
+            page_types = self._parse_page_types(meta.get("page_type"))
+            canonical_types = self._normalize_page_types(page_types)
+            score = similarity
+
+            # Slide-level优先
+            if str(meta.get("level", "")).lower() == "slide":
+                score += 0.02
+
+            # 细节页加分
+            if self._has_detail_signal(canonical_types, r.get("document", ""), detail_keywords):
+                score += 0.03
+
+            scored.append({
+                **r,
+                "similarity": similarity,
+                "score": score,
+                "metadata": {
+                    **meta,
+                    "page_type": canonical_types,
+                },
+            })
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+
+        if scored[0]["similarity"] < tau:
+            return []
+
+        return scored[:top_n]
+
+    # ---- helpers ----
+    def _build_where(self, project_name: Optional[str], where: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if where:
+            return where
+        if project_name:
+            return {"project_name": project_name}
+        projects = self.list_projects()
+        if len(projects) == 1:
+            return {"project_name": projects[0]}
+        return None
+
+    @staticmethod
+    def _parse_page_types(page_type_field: Any) -> List[str]:
+        if page_type_field is None:
+            return []
+        if isinstance(page_type_field, list):
+            return [str(x) for x in page_type_field]
+        if isinstance(page_type_field, str):
+            try:
+                loaded = json.loads(page_type_field)
+                if isinstance(loaded, list):
+                    return [str(x) for x in loaded]
+            except Exception:
+                # keep raw string
+                return [page_type_field]
+        return [str(page_type_field)]
+
+    @staticmethod
+    def _normalize_page_types(page_types: List[str]) -> List[str]:
+        """Map noisy page_type strings to a small canonical set for rerank signals."""
+        if not page_types:
+            return []
+        mapping = {
+            "data": "data_sources",
+            "数据": "data_sources",
+            "deployment": "deployment",
+            "部署": "deployment",
+            "api": "api",
+            "接口": "api",
+            "performance": "performance",
+            "性能": "performance",
+            "tech": "tech_stack",
+            "技术栈": "tech_stack",
+            "architecture": "architecture",
+            "架构": "architecture",
+        }
+        canonical: List[str] = []
+        for pt in page_types:
+            lower = pt.lower()
+            hit = None
+            for key, val in mapping.items():
+                if key in lower:
+                    hit = val
+                    break
+            canonical.append(hit or pt)
+        return canonical
+
+    @staticmethod
+    def _has_detail_signal(page_types: List[str], text: str, keywords: List[str]) -> bool:
+        for pt in page_types:
+            if pt in {"data_sources", "deployment", "api", "performance", "tech_stack"}:
+                return True
+        lower_text = text.lower()
+        return any(kw.lower() in lower_text for kw in keywords)
+
+    # ---- Guardrail & Rerank helpers (lightweight; no external deps) ----
+    DETAIL_KEYWORDS = [
+        "数据源",
+        "data source",
+        "deployment",
+        "部署",
+        "api",
+        "接口",
+        "性能",
+        "performance",
+        "tech stack",
+        "技术栈",
+    ]
+
+    def _parse_page_types(self, metadata: Dict[str, Any]) -> List[str]:
+        """Normalize page_type metadata (may already be a JSON string)."""
+        pt = metadata.get("page_type")
+        if pt is None:
+            return []
+        if isinstance(pt, list):
+            return [str(x) for x in pt]
+        if isinstance(pt, str):
+            try:
+                loaded = json.loads(pt)
+                if isinstance(loaded, list):
+                    return [str(x) for x in loaded]
+            except Exception:
+                return [pt]
+        return [str(pt)]
+
+    def _detail_bonus(self, metadata: Dict[str, Any], document: str) -> float:
+        """Heuristic boost for detail slides and critical page types."""
+        bonus = 0.0
+        if str(metadata.get("level", "")).lower() == "slide":
+            bonus += 0.02
+
+        page_types = self._parse_page_types(metadata)
+        for pt in page_types:
+            lower = pt.lower()
+            if any(keyword.lower() in lower for keyword in self.DETAIL_KEYWORDS):
+                bonus += 0.03
+                break
+
+        text_lower = document.lower()
+        if any(keyword.lower() in text_lower for keyword in self.DETAIL_KEYWORDS):
+            bonus += 0.02
+
+        return bonus
+
+    def _default_project_filter(self) -> Optional[Dict[str, Any]]:
+        """Best-effort default to the single project present; otherwise None."""
+        projects = self.list_projects()
+        if not projects:
+            return None
+        return {"project_name": projects[0]}
+
+    def query_with_guardrails(
+        self,
+        query_text: str,
+        top_k: int = 8,
+        top_n: int = 5,
+        tau: float = 0.5,
+        project_name: Optional[str] = None,
+        where: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Query with default project filter, lightweight rerank, and similarity threshold.
+
+        Returns a list of results (with similarity/score). If top-1 < tau, returns a
+        single entry: {"message": "未找到相关内容", "top1_similarity": <value>}.
+        """
+        # Determine where filter (explicit where > project_name > default)
+        if where is None:
+            if project_name:
+                where = {"project_name": project_name}
+            else:
+                where = self._default_project_filter()
+
+        raw = self.query(query_text, n_results=top_k, where=where)
+        if not raw:
+            return [{"message": "未找到相关内容"}]
+
+        reranked: List[Dict[str, Any]] = []
+        for r in raw:
+            sim = 1 - r["distance"] if r.get("distance") is not None else 0
+            bonus = self._detail_bonus(r.get("metadata", {}), r.get("document", ""))
+            reranked.append(
+                {
+                    **r,
+                    "similarity": sim,
+                    "score": sim + bonus,
+                    "page_type": self._parse_page_types(r.get("metadata", {})),
+                }
+            )
+
+        reranked.sort(key=lambda x: x["score"], reverse=True)
+
+        top_similarity = reranked[0]["similarity"]
+        if top_similarity < tau:
+            return [
+                {
+                    "message": "未找到相关内容",
+                    "top1_similarity": round(top_similarity, 4),
+                }
+            ]
+
+        return reranked[:top_n]
+
     def delete_by_project(self, project_name: str) -> int:
         """Delete all documents for a project.
 

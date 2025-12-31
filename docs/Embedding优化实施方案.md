@@ -3,6 +3,11 @@
 更新时间：2025-12-31  
 覆盖范围：现有 `ChatBI产品介绍_2025` 项目向量库（41 条文档，collection=`project_slides`）。
 
+## 本次落地进展（2025-12-31）
+- 生产侧封装：`ChromaStore.query_with_guardrails`（src/vectordb/chroma_store.py）提供默认项目过滤、Top-K=8 召回、细节页+slide 加分重排、0.5 相似度阈值护栏，供 API 直接复用。
+- page_type 归一：查询阶段对 page_type 进行关键词标准化（data_sources/deployment/api/performance/tech_stack/architecture），保证加分稳定；后续可在导入阶段写入规范化值。
+- 测试侧同步：`tmp_run_tests.py` 改为调用同一包装函数，生成新版 `tmp_embedding_test_round1.json` 以便与上一轮对比。
+
 ## 一、现状回顾
 - 本轮测试脚本：`tmp_run_tests.py`，输出：`tmp_embedding_test_round1.json`。  
 - Top-1 平均相似度（23 条查询）：直接事实 0.77、概念性 0.77、对比性 0.76、细节 0.73、模糊 0.76、多跳 0.79、边界 0.74。  
