@@ -27,11 +27,18 @@ from src.pipeline import PPTPipeline
     show_default=True,
     help="YAML 配置文件路径",
 )
-def main(input_file: Path, output_dir: Path | None, force: bool, verbose: bool, config_path: Path) -> None:
+@click.option("--refine", is_flag=True, default=False, help="修复模式：仅重跑低置信度页面")
+@click.option("--threshold", type=float, default=0.6, help="修复模式的置信度阈值 (默认 0.6)")
+def main(input_file: Path, output_dir: Path | None, force: bool, verbose: bool, config_path: Path, refine: bool, threshold: float) -> None:
     settings = Settings.from_yaml(config_path)
     target_dir = output_dir or default_output_dir(input_file)
     pipeline = PPTPipeline(settings=settings, verbose=verbose)
-    manifest = pipeline.run(pptx_path=input_file, output_dir=target_dir, force_rerun=force)
+    
+    if refine:
+        manifest = pipeline.refine(pptx_path=input_file, output_dir=target_dir, threshold=threshold)
+    else:
+        manifest = pipeline.run(pptx_path=input_file, output_dir=target_dir, force_rerun=force)
+        
     click.echo(f"完成，manifest: {target_dir / 'manifest.json'}")
     if manifest.get("errors"):
         click.echo(f"存在错误: {manifest['errors']}", err=True)

@@ -43,21 +43,30 @@ class PageSummarizer:
         return f"{PAGE_PROMPT}\n{image_hint}\n文本内容：\n{text_block}\n只输出 JSON。"
 
     def _parse_json(self, raw: str, slide: SlideText) -> Dict:
+        error_msg = ""
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
                 parsed = parsed[0]
             if isinstance(parsed, dict):
                 return self._fill_defaults(parsed, slide)
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            error_msg = f"JSON Parse Error: {str(e)}"
+        
         # Fallback if model returns non-JSON
-        return self._fill_defaults({}, slide, fallback_text=raw)
+        return self._fill_defaults({}, slide, fallback_text=raw, error_msg=error_msg)
 
-    def _fill_defaults(self, data: Dict, slide: SlideText, fallback_text: Optional[str] = None) -> Dict:
+    def _fill_defaults(self, data: Dict, slide: SlideText, fallback_text: Optional[str] = None, error_msg: str = "") -> Dict:
         bullets: List[str] = data.get("bullets") or []
         if fallback_text and not bullets:
             bullets = [line.strip() for line in fallback_text.splitlines() if line.strip()][:5]
+        
+        details = data.get("details")
+        if not details and fallback_text:
+            details = fallback_text
+        if error_msg:
+            details = f"[SYSTEM ERROR] {error_msg}\n\n[RAW OUTPUT]\n{details or ''}"
+
         image_caption = data.get("image_caption")
         return {
             # 强制使用管线内的页码，避免模型输出重复或错误的 slide_no
