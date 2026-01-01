@@ -27,3 +27,5 @@ def test_pipeline_smoke(tmp_path):
     assert manifest["page_count"] >= 1
     assert (output_dir / "slides").exists()
     assert (output_dir / "page_summaries").exists()
+    assert (output_dir / "embeddings" / "rag_documents.json").exists()
+    assert manifest["rag_documents"] >= 1

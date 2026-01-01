@@ -11,6 +11,7 @@ PAGE_PROMPT = """
 - title (string)
 - one_liner (string)：一句话中文总结
 - bullets (string[])：3-6 条关键信息
+- image_caption (string)：基于视觉的简短描述（无结构化失败时可为空）
 - details (string)
 - entities (string[])：提到的机构、产品、角色
 - signals (string[])：发现的信号/指标
@@ -42,24 +43,38 @@ class PageSummarizer:
         return f"{PAGE_PROMPT}\n{image_hint}\n文本内容：\n{text_block}\n只输出 JSON。"
 
     def _parse_json(self, raw: str, slide: SlideText) -> Dict:
+        error_msg = ""
         try:
             parsed = json.loads(raw)
+            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                parsed = parsed[0]
             if isinstance(parsed, dict):
                 return self._fill_defaults(parsed, slide)
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            error_msg = f"JSON Parse Error: {str(e)}"
+        
         # Fallback if model returns non-JSON
-        return self._fill_defaults({}, slide, fallback_text=raw)
+        return self._fill_defaults({}, slide, fallback_text=raw, error_msg=error_msg)
 
-    def _fill_defaults(self, data: Dict, slide: SlideText, fallback_text: Optional[str] = None) -> Dict:
+    def _fill_defaults(self, data: Dict, slide: SlideText, fallback_text: Optional[str] = None, error_msg: str = "") -> Dict:
         bullets: List[str] = data.get("bullets") or []
         if fallback_text and not bullets:
             bullets = [line.strip() for line in fallback_text.splitlines() if line.strip()][:5]
+        
+        details = data.get("details")
+        if not details and fallback_text:
+            details = fallback_text
+        if error_msg:
+            details = f"[SYSTEM ERROR] {error_msg}\n\n[RAW OUTPUT]\n{details or ''}"
+
+        image_caption = data.get("image_caption")
         return {
-            "slide_no": data.get("slide_no", slide.slide_no),
+            # 强制使用管线内的页码，避免模型输出重复或错误的 slide_no
+            "slide_no": slide.slide_no,
             "title": data.get("title", slide.title),
             "one_liner": data.get("one_liner") or (slide.text_content.split("\n")[0][:80] if slide.text_content else "暂无摘要"),
             "bullets": bullets,
+            "image_caption": image_caption,
             "details": data.get("details") or fallback_text,
             "entities": data.get("entities") or [],
             "signals": data.get("signals") or [],
@@ -76,6 +91,7 @@ class PageSummarizer:
             title=slide.title,
             one_liner=one_liner,
             bullets=bullets,
+            image_caption=one_liner,
             details=None,
             entities=[],
             signals=[],
