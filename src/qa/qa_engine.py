@@ -5,35 +5,12 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
+from src.prompts import get_qa_prompt
 from src.qa.qa_monitor import QAMonitor
-
 from src.summarizer.llm_client import LLMClient
 from src.vectordb.chroma_store import ChromaStore
 
-
-PROMPT_TEMPLATE = """
-你是专业的解决方案顾问，为客户提供简洁、直接的答案。
-
-【核心规则】
-1. 仅使用下方检索片段，不得添加外部知识或推测
-2. 若片段不足以回答，直接回复「文档中未提及相关信息」
-3. 回答必须简洁：3-5 个要点，每个要点 1-2 句话，总长度不超过 200 字
-4. 避免冗长推理过程、元评论（如"文档中提到..."、"可以分为..."）
-5. 直接给出答案，自然引用来源（如"根据第 X 页"）
-
-【回答格式】
-- 开门见山，直接回答核心问题
-- 用简短列表呈现关键要点
-- 必要时提供 1-2 个具体案例或数据
-- 避免"一、二、三"等多层级结构
-
-检索片段：
-{context}
-
-用户问题：{question}
-
-回答：
-"""
+QA_PROMPT_TEMPLATE = get_qa_prompt()
 
 
 class QAEngine:
@@ -223,7 +200,7 @@ class QAEngine:
     @staticmethod
     def _build_prompt(question: str, contexts: List[str]) -> str:
         context_block = "\n\n".join(contexts)
-        return PROMPT_TEMPLATE.format(context=context_block, question=question)
+        return QA_PROMPT_TEMPLATE.format(context=context_block, question=question)
 
     @staticmethod
     def _normalize_results(results: List[Dict[str, Any]], top_n: int) -> Dict[str, Any]:
@@ -260,4 +237,3 @@ class QAEngine:
             )
 
         return {"contexts": contexts, "sources": sources}
-

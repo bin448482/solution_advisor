@@ -64,6 +64,7 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 | `src/renderer/AGENTS.md` | PPTX → PDF/PNG 渲染策略与对 `soffice`/`pdftoppm` 依赖。 |
 | `src/extractor/AGENTS.md` | 幻灯片文本抽取逻辑与数据对齐假设。 |
 | `src/summarizer/AGENTS.md` | LLM 客户端、单页总结与项目画像生成流程。 |
+| `src/prompts/AGENTS.md` | 统一管理问答/总结/画像的 Prompt 文本与加载器。 |
 | `src/embeddings/AGENTS.md` | M3E 向量模型加载、设备选择与批量编码策略。 |
 | `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤约定。 |
 | `src/qa/AGENTS.md` | QA 引擎、监控与缓存（JSONL + 语义缓存）职责与配置。 |
