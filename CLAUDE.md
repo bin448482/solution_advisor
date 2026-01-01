@@ -399,18 +399,40 @@ RAG preparation runs automatically after profile generation:
 
 **Generated Artifacts**: `ppt_outputs/` is treated as build artifacts. Update `.gitignore` if these should not be committed.
 
-## Documentation Structure
+## Documentation Structure & Maintenance
 
-This project uses a hierarchical AGENTS.md documentation system for module-specific implementation details:
+The repository uses paired hierarchical docs (`AGENTS.md` + `CLAUDE.md`) to keep per-module guidance close to the code.
 
-- **`AGENTS.md`**: Repository guidelines, project structure, build/test commands, coding conventions
-- **`src/AGENTS.md`**: Pipeline overview, config system, dependencies
-- **`src/renderer/AGENTS.md`**: Rendering strategy details (PPTX → PDF → PNG)
-- **`src/extractor/AGENTS.md`**: Text extraction approach using python-pptx
-- **`src/summarizer/AGENTS.md`**: LLM client and summarization logic
-- **`tests/AGENTS.md`**: Test structure and smoke tests
+- **层级职责**：根目录文件承担全局规范与索引；子目录文件聚焦本模块的角色、入口、依赖与测试要点。
+- **同步要求**：完成或调整模块功能后，务必更新该目录下的 `AGENTS.md` 与 `CLAUDE.md`（若为全局变更，同时更新根目录文件）。
+- **新增模块**：新建目录时创建对应的 `AGENTS.md`/`CLAUDE.md`，并在根目录文件的索引表中补充引用说明。
 
-Refer to these files for detailed implementation notes and architectural decisions for each module. This CLAUDE.md provides the high-level overview and integration points.
+### @AGENTS.md 索引
+| 路径 | 职责概述 |
+| --- | --- |
+| `AGENTS.md` | 全局开发规范、目录职责索引、常用命令。 |
+| `src/AGENTS.md` | PPT 解析主流程概览、配置与依赖。 |
+| `src/renderer/AGENTS.md` | PPTX → PDF/PNG 渲染策略与外部工具要求。 |
+| `src/extractor/AGENTS.md` | 幻灯片文本抽取流程与对齐假设。 |
+| `src/summarizer/AGENTS.md` | LLM 总结/画像生成链路与客户端配置。 |
+| `src/embeddings/AGENTS.md` | M3E 向量模型加载与编码策略。 |
+| `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤。 |
+| `src/qa/AGENTS.md` | QA 引擎检索+生成链路与状态语义。 |
+| `src/scripts/AGENTS.md` | QA/Vectordb CLI 参数、输出与错误处理。 |
+| `tests/AGENTS.md` | 测试覆盖、跳过条件与烟囱测试说明。 |
+
+### @CLAUDE.md 索引
+| 路径 | 职责概述 |
+| --- | --- |
+| `CLAUDE.md` | 高层概览、架构与端到端用法。 |
+| `src/CLAUDE.md` | 核心管线详细说明、文件/数据流与配置示例。 |
+| `src/renderer/CLAUDE.md` | 渲染模块设计、两步转换策略及依赖。 |
+| `src/extractor/CLAUDE.md` | 文本抽取设计、数据模型与边界情况。 |
+| `src/summarizer/CLAUDE.md` | 单页总结/画像提示词、LLM 客户端及错误处理。 |
+| `src/embeddings/CLAUDE.md` | 向量模型选择、缓存、设备策略与性能提示。 |
+| `src/vectordb/CLAUDE.md` | Chroma 集成、检索护栏与统计/维护命令。 |
+| `src/qa/CLAUDE.md` | QA Engine 提示构建、输出格式与 guardrail 逻辑。 |
+| `src/scripts/CLAUDE.md` | CLI 使用案例、参数说明与常见故障排查。 |
 
 ## External Consulting Agent (Future)
 

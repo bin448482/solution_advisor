@@ -179,8 +179,7 @@ return llm_answer
   - `JsonlSink` + `FixedRateSampler(p=1.0)` + `TruncateRedactor(n=300)` + `HybridLookup(exact→semantic, threshold=0.9, ttl=7d, vectordb_version bound)`。
 
 ## 18. 规范与文档同步要求
-- 实施此方案时需同步更新根目录下的 `AGENTS.md` 与 `CLAUDE.md`：
-  - 补充新增的监控/缓存能力、配置键、CLI 开关（如 `--monitor-debug`）、策略模式可插拔组件列表。
-  - 标明默认阈值、TTL、向量库版本绑定、日志路径、采样与脱敏默认策略。
-  - 若新增命令或入口（如 `qa_trace_viewer` 或新的 CLI flag），在 `CLAUDE.md` 给出使用示例，在 `AGENTS.md` 说明与其他 agent/工具的协作关系。
-- 新增文件/目录（如 `logs/qa_sessions/`, `src/qa/monitoring/`）需在上述文档引用，便于维护和审计。
+- 参考根目录 `AGENTS.md`（仓库通用规范）与 `CLAUDE.md`（工具/Agent 说明）约定进行同步更新：
+  - 按 `AGENTS.md` 的文档与命名规范，补充监控/缓存能力、配置键、默认阈值/TTL/日志路径、采样与脱敏默认策略。
+  - 按 `CLAUDE.md` 的使用说明格式，记录新增命令或入口（如 `--monitor-debug`, `qa_trace_viewer`）、策略组件清单，以及与其他工具/agent 的协作关系。
+- 新增文件/目录（如 `logs/qa_sessions/`, `src/qa/monitoring/`）需在上述文档中被引用，便于维护和审计。
