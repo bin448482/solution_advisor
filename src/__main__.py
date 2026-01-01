@@ -29,15 +29,43 @@ from src.pipeline import PPTPipeline
 )
 @click.option("--refine", is_flag=True, default=False, help="修复模式：仅重跑低置信度页面")
 @click.option("--threshold", type=float, default=0.6, help="修复模式的置信度阈值 (默认 0.6)")
-def main(input_file: Path, output_dir: Path | None, force: bool, verbose: bool, config_path: Path, refine: bool, threshold: float) -> None:
+@click.option("--pages", type=str, default=None, help="修复模式下指定页面列表，例如 \"1,3,5\"")
+@click.option("--force-capture", is_flag=True, default=False, help="强制重跑渲染/提取阶段")
+@click.option("--force-interpret", is_flag=True, default=False, help="强制重跑摘要/画像/RAG 阶段")
+@click.option("--no-vectordb", is_flag=True, default=False, help="跳过向量库写入，仅生成 embeddings")
+def main(
+    input_file: Path,
+    output_dir: Path | None,
+    force: bool,
+    verbose: bool,
+    config_path: Path,
+    refine: bool,
+    threshold: float,
+    pages: str | None,
+    force_capture: bool,
+    force_interpret: bool,
+    no_vectordb: bool,
+) -> None:
     settings = Settings.from_yaml(config_path)
     target_dir = output_dir or default_output_dir(input_file)
     pipeline = PPTPipeline(settings=settings, verbose=verbose)
     
     if refine:
-        manifest = pipeline.refine(pptx_path=input_file, output_dir=target_dir, threshold=threshold)
+        manifest = pipeline.refine(
+            pptx_path=input_file,
+            output_dir=target_dir,
+            threshold=threshold,
+            pages=pages,
+        )
     else:
-        manifest = pipeline.run(pptx_path=input_file, output_dir=target_dir, force_rerun=force)
+        manifest = pipeline.run(
+            pptx_path=input_file,
+            output_dir=target_dir,
+            force_rerun=force,
+            force_capture=force_capture,
+            force_interpret=force_interpret,
+            no_vectordb=no_vectordb,
+        )
         
     click.echo(f"完成，manifest: {target_dir / 'manifest.json'}")
     if manifest.get("errors"):

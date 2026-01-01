@@ -2,7 +2,6 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-
 class SlideText(BaseModel):
     slide_no: int
     title: Optional[str] = None
@@ -49,6 +48,18 @@ class VectorDBMetrics(BaseModel):
     collection_name: str = ""
 
 
+class StageMetrics(BaseModel):
+    """Per-stage timing and counts for observability."""
+
+    name: str
+    started_at: str
+    ended_at: str
+    duration_seconds: float
+    success_count: int = 0
+    failure_count: int = 0
+    notes: Optional[str] = None
+
+
 class Manifest(BaseModel):
     input_file: str
     file_hash: str
@@ -62,3 +73,5 @@ class Manifest(BaseModel):
     page_summaries: int
     rag_documents: int = 0
     vectordb_metrics: Optional[VectorDBMetrics] = None
+    stages: List[StageMetrics] = Field(default_factory=list)
+    refine_runs: int = 0
