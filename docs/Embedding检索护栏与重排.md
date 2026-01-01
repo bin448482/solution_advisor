@@ -9,7 +9,7 @@
 
 ## 实施位置
 - 代码：`src/vectordb/chroma_store.py` 新增 `query_with_guardrails(...)`。
-- 测试：`tmp_run_tests.py` 已改为调用同一逻辑，生成 `tmp_embedding_test_round1.json`。
+- 测试：`tests/tmp_run_tests.py` 已改为调用同一逻辑，生成 `tests/tmp_embedding_test_round1.json`。
 
 ## 默认行为
 - **项目过滤**：若未显式传 `where`，自动用单一项目的 `project_name` 过滤；多项目时不强制过滤，可传参指定。

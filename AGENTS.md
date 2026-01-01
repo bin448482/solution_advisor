@@ -36,7 +36,7 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 
 - If code is added, include basic tests in `tests/` and document how to run them in this file.
 - Add at least one “smoke test” that validates the end-to-end pipeline on a small PPT sample.
-- Embedding回归：`tmp_run_tests.py` / `ChromaStore.query_with_guardrails` 默认 project 过滤 + Top-K=8 召回、细节页/slide 加分重排 + 0.5 相似度阈值，生成 `tmp_embedding_test_round1.json` 供对比。
+- Embedding回归：`tests/tmp_run_tests.py` / `ChromaStore.query_with_guardrails` 默认 project 过滤 + Top-K=8 召回、细节页/slide 加分重排 + 0.5 相似度阈值，生成 `tests/tmp_embedding_test_round1.json` 供对比。
 
 ## Commit & Pull Request Guidelines
 

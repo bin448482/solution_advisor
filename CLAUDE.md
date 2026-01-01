@@ -53,7 +53,7 @@ python -m src.scripts.vectordb_cli delete --project ChatBI
 - 召回与重排：`top_k=8` 召回 → 相似度 + 细节页/slide 加分 → 取前 5。
 - 阈值护栏：Top-1 相似度 `< 0.5` 返回空列表（由上层决定“未找到相关内容”的文案）。
 - page_type 归一：查询阶段将 page_type 归一到 data_sources/deployment/api/performance/tech_stack/architecture，再用于加分与展示。
-- 测试脚本：`tmp_run_tests.py` 直接调用该包装函数，输出 `tmp_embedding_test_round1.json`。
+- 测试脚本：`tests/tmp_run_tests.py` 直接调用该包装函数，输出 `tests/tmp_embedding_test_round1.json`。
 
 ### Running the QA CLI (RAG问答)
 
