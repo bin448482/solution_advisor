@@ -57,12 +57,12 @@
    $env:HF_HUB_OFFLINE=1; python -m src.scripts.vectordb_cli stats
    ```
 3) **更新测试脚本（临时）**  
-   - 在 `tmp_run_tests.py` 中添加：`tau = 0.5`，过滤 `similarity < tau` 记为“无结果”；将 `top_k` 提升到 8 并做重排（按 page_type/level 规则）。  
+   - 在 `tests/tmp_run_tests.py` 中添加：`tau = 0.5`，过滤 `similarity < tau` 记为“无结果”；将 `top_k` 提升到 8 并做重排（按 page_type/level 规则）。  
 4) **复测**  
    ```powershell
-   $env:HF_HUB_OFFLINE=1; python tmp_run_tests.py
+   $env:HF_HUB_OFFLINE=1; python tests/tmp_run_tests.py
    ```
-   - 对比新的 `tmp_embedding_test_round1.json` 与当前结果，重点关注细节类、边界类。  
+   - 对比新的 `tests/tmp_embedding_test_round1.json` 与当前结果，重点关注细节类、边界类。  
 5) **服务侧落地**（若测试通过）  
    - 把阈值、重排、默认 project 过滤封装进生产查询链路（例如 API 层或 `ChromaStore.query` 的包装器），并更新 README/使用说明。
 
@@ -75,4 +75,4 @@
 ## 六、后续规划
 - 引入轻量 reranker（如 bge-reranker-base）验证排序提升；  
 - 扩充第二个项目以真实测试对比类问题；  
-- 在 CI 增加快速烟囱测试：`python tmp_run_tests.py`，自动计算各类 Top-1/Top-3 与阈值拒答率。
+- 在 CI 增加快速烟囱测试：`python tests/tmp_run_tests.py`，自动计算各类 Top-1/Top-3 与阈值拒答率。

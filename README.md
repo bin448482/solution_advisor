@@ -175,7 +175,7 @@ pytest
 
 嵌入文档分两层：每一页的标题、one-liner、要点、详情被拼成可搜索的语义文本，metadata 里写明页码、页面类型、实体标签；整份画像再生成一条项目级综述，标记为 `level=project`，用来覆盖全局问题。为减少噪声，发现 `details/bullets` 是嵌套 JSON 时会尝试解包，缺失字段用默认值补齐，避免空壳文档进入索引。所有生成数量、异常与回退都会写进 manifest，QA CLI 直接读取这些嵌入文档做检索与重排。
 
-我们在内部问答集上对 `top_k / top_n / tau` 以及相似度阈值（默认 0.5）做过一轮微调，实验结果存放在 `tmp_embedding_test_round1.json`，并将较优参数固化到 `ChromaStore.query_with_guardrails`，让默认体验开箱可用。
+我们在内部问答集上对 `top_k / top_n / tau` 以及相似度阈值（默认 0.5）做过一轮微调，实验结果存放在 `tests/tmp_embedding_test_round1.json`，并将较优参数固化到 `ChromaStore.query_with_guardrails`，让默认体验开箱可用。
 
 还在改进的方向包括：建立自动化的嵌入质量基线与回归；继续优化切分、去重和重排参数；补齐 Docker/一键安装、任务队列和可视化看板；扩充异常 PPT 样本，完善解包和告警回退，提升鲁棒性。
 
@@ -184,4 +184,4 @@ pytest
 - 批量向量化：使用 `moka-ai/m3e-base`（768 维）本地推理，自动选择 CPU/CUDA/MPS，OOM 时自动降低 batch；首次运行自动下载并缓存模型。  
 - 选择 M3E 的原因：中文语义效果稳定、模型体量适中（可本地离线）、社区基准表现良好；相比英文化模型，中文召回与断句更可靠；开源许可便于内网部署。  
 - 向量库集成：向量生成后写入 Chroma，metadata 保留 `project_name/slide_no/page_type/level/confidence` 等字段，便于后续过滤与重排；同一流程可被 QA CLI 和向量库管理脚本共享。  
-- 结果记录：Embedding 与插入耗时、成功/失败数写入 manifest，便于回溯；测试回归数据保存在 `tmp_embedding_test_round1.json` 以对比调参效果。
+- 结果记录：Embedding 与插入耗时、成功/失败数写入 manifest，便于回溯；测试回归数据保存在 `tests/tmp_embedding_test_round1.json` 以对比调参效果。
