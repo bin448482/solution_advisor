@@ -29,6 +29,7 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
   - PPT inputs: `ppts/<ProjectName>_<Year>.pptx`
   - Snapshot outputs: `ppt_outputs/<ppt_basename>/slides/001.png`
   - Docs: `docs/<Topic>.md`
+- Docs naming (docs/): `<领域/产品>_<主题>_<类型>.md`，类型常用 `需求分析/实施计划/测试方案/复盘`；示例：`PPT解析与项目画像_MVP实施计划.md`。保持中文文件名、首字母大写，避免空格。
 - Keep Markdown concise and scannable: short sections, bullet lists, and explicit file paths.
 
 ## Testing Guidelines

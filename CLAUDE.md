@@ -395,7 +395,7 @@ RAG preparation runs automatically after profile generation:
 **File Naming**:
 - Input PPTs: `ppts/<ProjectName>_<Year>.pptx`
 - Output snapshots: `ppt_outputs/<ppt_basename>/`
-- Docs: `docs/<Topic>.md`
+- Docs (docs/): `<领域/产品>_<主题>_<类型>.md`（类型推荐：需求分析/实施计划/测试方案/复盘），中文命名，首字母大写，无空格；示例：`PPT解析与项目画像_增量修复方案.md`。
 
 **Generated Artifacts**: `ppt_outputs/` is treated as build artifacts. Update `.gitignore` if these should not be committed.
 
