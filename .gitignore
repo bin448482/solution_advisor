@@ -4,6 +4,7 @@ ppt_outputs/
 # Vector database and model cache
 chroma_db/
 models/
+logs/
 
 # Local agent/tool config (may contain environment-specific values)
 .claude/settings.local.json

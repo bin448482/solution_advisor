@@ -99,6 +99,7 @@ python -m src --input ppts/ChatBI产品介绍_2025.pptx --output ppt_outputs/Cha
 # 运行问答 CLI（示例）
 python -m src.scripts.qa_cli -q "ChatBI的核心功能是什么" --config config/settings.yaml
 ```
+- 监控与缓存：`qa_cli` 默认注入 `QAMonitor`。命中缓存时输出 `[cache hit/<level>]` 前缀；日志与精确缓存写入 `logs/qa_sessions/`（按日滚动 JSONL），语义缓存写入 Chroma collection `qa_cache`（TTL 默认 7 天，可通过 `qa.cache.vectordb_version` 统一失效）。
 
 输出示例：
 - `slides/001.png`…：渲染图片

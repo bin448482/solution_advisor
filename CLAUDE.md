@@ -60,6 +60,7 @@ python -m src.scripts.vectordb_cli delete --project ChatBI
 ```bash
 python -m src.scripts.qa_cli -q ChatBI的核心功能是什么 -p ChatBI --config config/settings.yaml --top-k 8 --top-n 5 --tau 0.5
 ```
+- CLI 默认启用 `QAMonitor`：命中缓存会在答案前打印 `[cache hit/<level>]`，日志与精确缓存写 `logs/qa_sessions/qa_logs_YYYYMMDD.jsonl` / `qa_cache.jsonl`，语义缓存写入 Chroma collection `qa_cache`（TTL=7d，可用 `qa.cache.vectordb_version` 统一失效）。
 
 - 输入：问题必填；可选 project 过滤。
 - 输出：answer + sources + status（success/no_context/error）。
@@ -417,7 +418,7 @@ The repository uses paired hierarchical docs (`AGENTS.md` + `CLAUDE.md`) to keep
 | `src/summarizer/AGENTS.md` | LLM 总结/画像生成链路与客户端配置。 |
 | `src/embeddings/AGENTS.md` | M3E 向量模型加载与编码策略。 |
 | `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤。 |
-| `src/qa/AGENTS.md` | QA 引擎检索+生成链路与状态语义。 |
+| `src/qa/AGENTS.md` | QA 引擎 + 监控/缓存职责、配置键说明。 |
 | `src/scripts/AGENTS.md` | QA/Vectordb CLI 参数、输出与错误处理。 |
 | `tests/AGENTS.md` | 测试覆盖、跳过条件与烟囱测试说明。 |
 
