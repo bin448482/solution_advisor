@@ -215,7 +215,7 @@ class QAMonitor:
         embedding = self.embedding_model.embed_single(question_norm)
         where = {"vectordb_version": str(self.cache_cfg.vectordb_version)}
         if project_name:
-            where["project_name"] = project_name
+            where = {"$and": [where, {"project_name": project_name}]}
 
         results = self.semantic_collection.query(
             query_embeddings=[embedding.tolist()],
