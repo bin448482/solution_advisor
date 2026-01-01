@@ -8,7 +8,8 @@
       "Bash(claude:*)",
       "Bash(python -m src.scripts.vectordb_cli import:*)",
       "Bash(pip install:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(dir:*)"
     ]
   }
 }
