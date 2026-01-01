@@ -20,3 +20,20 @@ embedding_model: moka-ai/m3e-base        # HuggingFace model ID (m3e-base or m3e
 embedding_device: cpu                    # Device: cpu | cuda | mps (Apple Silicon)
 embedding_batch_size: 32                 # Batch size for embedding generation
 embedding_cache_dir: ./models            # Model cache directory
+
+# QA monitoring & cache
+qa:
+  monitor:
+    monitor_enabled: true
+    monitor_sample_rate: 1.0
+    log_dir: logs/qa_sessions
+  cache:
+    cache_enabled: true
+    cache_sample_rate: 1.0
+    cache_ttl_days: 7
+    cache_backend: jsonl                 # jsonl | sqlite (sqlite reserved)
+    cache_semantic_enabled: true
+    cache_semantic_threshold: 0.9
+    cache_collection: qa_cache
+    cache_persist_dir: ./chroma_db
+    vectordb_version: v1

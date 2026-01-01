@@ -36,7 +36,7 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 
 - If code is added, include basic tests in `tests/` and document how to run them in this file.
 - Add at least one “smoke test” that validates the end-to-end pipeline on a small PPT sample.
-- Embedding回归：`tmp_run_tests.py` / `ChromaStore.query_with_guardrails` 默认 project 过滤 + Top-K=8 召回、细节页/slide 加分重排 + 0.5 相似度阈值，生成 `tmp_embedding_test_round1.json` 供对比。
+- Embedding回归：`tests/tmp_run_tests.py` / `ChromaStore.query_with_guardrails` 默认 project 过滤 + Top-K=8 召回、细节页/slide 加分重排 + 0.5 相似度阈值，生成 `tests/tmp_embedding_test_round1.json` 供对比。
 
 ## Commit & Pull Request Guidelines
 
@@ -51,10 +51,29 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 - Do not commit API keys, tokens, or customer-sensitive content.
 - If `ppt_outputs/` is treated as generated output, add/update `.gitignore` accordingly.
 
+## 分层 @AGENTS.md 职责与更新规范
+
+- **根目录 `AGENTS.md`（本文件）**：定义全局开发规范、目录职责与公共命令，同时充当索引，必须列出并简述所有子目录的 `AGENTS.md`。
+- **模块内 `AGENTS.md`**：记录该目录下实现的职责、入口脚本、关键依赖与运行/测试要点，只关注本模块。
+- **变更同步**：完成某模块功能或接口调整后，须同时更新对应目录的 `AGENTS.md`（若属全局变更，也需同步本文件）。
+- **新增目录**：新增模块时在该目录创建 `AGENTS.md`，并在根目录表格中添加引用说明。
+
+| 子目录 `AGENTS.md` | 职责概述 |
+| --- | --- |
+| `src/AGENTS.md` | 总览 PPT 解析主流程、配置、核心依赖与 CLI 入口。 |
+| `src/renderer/AGENTS.md` | PPTX → PDF/PNG 渲染策略与对 `soffice`/`pdftoppm` 依赖。 |
+| `src/extractor/AGENTS.md` | 幻灯片文本抽取逻辑与数据对齐假设。 |
+| `src/summarizer/AGENTS.md` | LLM 客户端、单页总结与项目画像生成流程。 |
+| `src/embeddings/AGENTS.md` | M3E 向量模型加载、设备选择与批量编码策略。 |
+| `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤约定。 |
+| `src/qa/AGENTS.md` | QA 引擎、监控与缓存（JSONL + 语义缓存）职责与配置。 |
+| `src/scripts/AGENTS.md` | CLI 工具（qa_cli、vectordb_cli）参数与输出规范。 |
+| `tests/AGENTS.md` | 测试覆盖范围、跳过条件与烟囱测试说明。 |
+
 ## Code status (MVP skeleton)
 - Python pipeline lives in `src/` with CLI entry `python -m src --input ppts/... --output ppt_outputs/... --force`.
 - Core pieces: rendering (`renderer/libreoffice.py`), text extraction (`extractor/ppt_extractor.py`), LLM summarization (`summarizer/`), orchestration (`pipeline.py`), config (`config.py`), CLI (`__main__.py`), utilities (`utils.py`).
 - RAG 文档生成：`rag.py` + `pipeline.py` 将单页/画像转换为 `ppt_outputs/<ppt>/embeddings/rag_documents.json`，同时在 manifest 中记录 `rag_documents` 数量。
-- QA 问答：`src/qa/qa_engine.py` + `src/scripts/qa_cli.py`，调用 `ChromaStore.query_with_guardrails` + `LLMClient.generate`，默认 top_k=8 / top_n=5 / tau=0.5，返回 `answer/sources/status`。
+- QA 问答：`src/qa/qa_engine.py` + `src/scripts/qa_cli.py`，调用 `ChromaStore.query_with_guardrails` + `LLMClient.generate`，默认 top_k=8 / top_n=5 / tau=0.5；可选监控/缓存中间层（`QAMonitor`）写 `logs/qa_sessions/*.jsonl`，提供精确/语义命中与 TTL/VDB 版本绑定。
 - Tests under `tests/` include model sanity and an e2e smoke that requires `soffice` + `pdftoppm` and uses `LLM_PROVIDER=mock`.
 - Dependencies listed in `requirements.txt`; config template in `config/settings.example.yaml`; usage in `README.md`.

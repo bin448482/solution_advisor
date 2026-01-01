@@ -5,6 +5,29 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+class QAMonitoringSettings(BaseModel):
+    monitor_enabled: bool = Field(default=True)
+    monitor_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    log_dir: str = Field(default="logs/qa_sessions")
+
+
+class QACacheSettings(BaseModel):
+    cache_enabled: bool = Field(default=True)
+    cache_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    cache_ttl_days: int = Field(default=7, ge=1)
+    cache_backend: str = Field(default="jsonl")
+    cache_semantic_enabled: bool = Field(default=True)
+    cache_semantic_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
+    cache_collection: str = Field(default="qa_cache")
+    cache_persist_dir: str = Field(default="./chroma_db")
+    vectordb_version: str | int = Field(default="v1")
+
+
+class QASettings(BaseModel):
+    monitor: QAMonitoringSettings = Field(default_factory=QAMonitoringSettings)
+    cache: QACacheSettings = Field(default_factory=QACacheSettings)
+
+
 class Settings(BaseModel):
     """Application configuration loaded from a YAML file."""
 
@@ -30,6 +53,9 @@ class Settings(BaseModel):
     embedding_device: str = Field(default="cpu")
     embedding_batch_size: int = Field(default=32)
     embedding_cache_dir: str = Field(default="./models")
+
+    # QA Monitor & Cache
+    qa: QASettings = Field(default_factory=QASettings)
 
     @classmethod
     def from_yaml(cls, path: Path | str = Path("config/settings.yaml")) -> "Settings":

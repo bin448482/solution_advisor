@@ -1,5 +1,6 @@
 ﻿# coding: utf-8
 import json
+from pathlib import Path
 from textwrap import shorten
 from typing import Any, Dict, List, Optional
 
@@ -94,6 +95,7 @@ for category, q in queries:
         )
     report.append(entry)
 
-with open("tmp_embedding_test_round1.json", "w", encoding="utf-8") as f:
+out_path = Path(__file__).with_name("tmp_embedding_test_round1.json")
+with out_path.open("w", encoding="utf-8") as f:
     json.dump(report, f, ensure_ascii=False, indent=2)
-print("saved tmp_embedding_test_round1.json")
+print(f"saved {out_path}")

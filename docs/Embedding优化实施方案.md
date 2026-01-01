@@ -6,10 +6,10 @@
 ## 本次落地进展（2025-12-31）
 - 生产侧封装：`ChromaStore.query_with_guardrails`（src/vectordb/chroma_store.py）提供默认项目过滤、Top-K=8 召回、细节页+slide 加分重排、0.5 相似度阈值护栏，供 API 直接复用。
 - page_type 归一：查询阶段对 page_type 进行关键词标准化（data_sources/deployment/api/performance/tech_stack/architecture），保证加分稳定；后续可在导入阶段写入规范化值。
-- 测试侧同步：`tmp_run_tests.py` 改为调用同一包装函数，生成新版 `tmp_embedding_test_round1.json` 以便与上一轮对比。
+- 测试侧同步：`tests/tmp_run_tests.py` 改为调用同一包装函数，生成新版 `tests/tmp_embedding_test_round1.json` 以便与上一轮对比。
 
 ## 一、现状回顾
-- 本轮测试脚本：`tmp_run_tests.py`，输出：`tmp_embedding_test_round1.json`。  
+- 本轮测试脚本：`tests/tmp_run_tests.py`，输出：`tests/tmp_embedding_test_round1.json`。  
 - Top-1 平均相似度（23 条查询）：直接事实 0.77、概念性 0.77、对比性 0.76、细节 0.73、模糊 0.76、多跳 0.79、边界 0.74。  
 - 主要问题：
   - **结果集中**：大多数命中 overview / 对比页，细节页（数据源、部署、接口）曝光不足。
@@ -57,12 +57,12 @@
    $env:HF_HUB_OFFLINE=1; python -m src.scripts.vectordb_cli stats
    ```
 3) **更新测试脚本（临时）**  
-   - 在 `tmp_run_tests.py` 中添加：`tau = 0.5`，过滤 `similarity < tau` 记为“无结果”；将 `top_k` 提升到 8 并做重排（按 page_type/level 规则）。  
+   - 在 `tests/tmp_run_tests.py` 中添加：`tau = 0.5`，过滤 `similarity < tau` 记为“无结果”；将 `top_k` 提升到 8 并做重排（按 page_type/level 规则）。  
 4) **复测**  
    ```powershell
-   $env:HF_HUB_OFFLINE=1; python tmp_run_tests.py
+   $env:HF_HUB_OFFLINE=1; python tests/tmp_run_tests.py
    ```
-   - 对比新的 `tmp_embedding_test_round1.json` 与当前结果，重点关注细节类、边界类。  
+   - 对比新的 `tests/tmp_embedding_test_round1.json` 与当前结果，重点关注细节类、边界类。  
 5) **服务侧落地**（若测试通过）  
    - 把阈值、重排、默认 project 过滤封装进生产查询链路（例如 API 层或 `ChromaStore.query` 的包装器），并更新 README/使用说明。
 
@@ -75,4 +75,4 @@
 ## 六、后续规划
 - 引入轻量 reranker（如 bge-reranker-base）验证排序提升；  
 - 扩充第二个项目以真实测试对比类问题；  
-- 在 CI 增加快速烟囱测试：`python tmp_run_tests.py`，自动计算各类 Top-1/Top-3 与阈值拒答率。
+- 在 CI 增加快速烟囱测试：`python tests/tmp_run_tests.py`，自动计算各类 Top-1/Top-3 与阈值拒答率。

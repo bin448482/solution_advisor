@@ -53,13 +53,14 @@ python -m src.scripts.vectordb_cli delete --project ChatBI
 - 召回与重排：`top_k=8` 召回 → 相似度 + 细节页/slide 加分 → 取前 5。
 - 阈值护栏：Top-1 相似度 `< 0.5` 返回空列表（由上层决定“未找到相关内容”的文案）。
 - page_type 归一：查询阶段将 page_type 归一到 data_sources/deployment/api/performance/tech_stack/architecture，再用于加分与展示。
-- 测试脚本：`tmp_run_tests.py` 直接调用该包装函数，输出 `tmp_embedding_test_round1.json`。
+- 测试脚本：`tests/tmp_run_tests.py` 直接调用该包装函数，输出 `tests/tmp_embedding_test_round1.json`。
 
 ### Running the QA CLI (RAG问答)
 
 ```bash
 python -m src.scripts.qa_cli -q ChatBI的核心功能是什么 -p ChatBI --config config/settings.yaml --top-k 8 --top-n 5 --tau 0.5
 ```
+- CLI 默认启用 `QAMonitor`：命中缓存会在答案前打印 `[cache hit/<level>]`，日志与精确缓存写 `logs/qa_sessions/qa_logs_YYYYMMDD.jsonl` / `qa_cache.jsonl`，语义缓存写入 Chroma collection `qa_cache`（TTL=7d，可用 `qa.cache.vectordb_version` 统一失效）。
 
 - 输入：问题必填；可选 project 过滤。
 - 输出：answer + sources + status（success/no_context/error）。
@@ -399,18 +400,40 @@ RAG preparation runs automatically after profile generation:
 
 **Generated Artifacts**: `ppt_outputs/` is treated as build artifacts. Update `.gitignore` if these should not be committed.
 
-## Documentation Structure
+## Documentation Structure & Maintenance
 
-This project uses a hierarchical AGENTS.md documentation system for module-specific implementation details:
+The repository uses paired hierarchical docs (`AGENTS.md` + `CLAUDE.md`) to keep per-module guidance close to the code.
 
-- **`AGENTS.md`**: Repository guidelines, project structure, build/test commands, coding conventions
-- **`src/AGENTS.md`**: Pipeline overview, config system, dependencies
-- **`src/renderer/AGENTS.md`**: Rendering strategy details (PPTX → PDF → PNG)
-- **`src/extractor/AGENTS.md`**: Text extraction approach using python-pptx
-- **`src/summarizer/AGENTS.md`**: LLM client and summarization logic
-- **`tests/AGENTS.md`**: Test structure and smoke tests
+- **层级职责**：根目录文件承担全局规范与索引；子目录文件聚焦本模块的角色、入口、依赖与测试要点。
+- **同步要求**：完成或调整模块功能后，务必更新该目录下的 `AGENTS.md` 与 `CLAUDE.md`（若为全局变更，同时更新根目录文件）。
+- **新增模块**：新建目录时创建对应的 `AGENTS.md`/`CLAUDE.md`，并在根目录文件的索引表中补充引用说明。
 
-Refer to these files for detailed implementation notes and architectural decisions for each module. This CLAUDE.md provides the high-level overview and integration points.
+### @AGENTS.md 索引
+| 路径 | 职责概述 |
+| --- | --- |
+| `AGENTS.md` | 全局开发规范、目录职责索引、常用命令。 |
+| `src/AGENTS.md` | PPT 解析主流程概览、配置与依赖。 |
+| `src/renderer/AGENTS.md` | PPTX → PDF/PNG 渲染策略与外部工具要求。 |
+| `src/extractor/AGENTS.md` | 幻灯片文本抽取流程与对齐假设。 |
+| `src/summarizer/AGENTS.md` | LLM 总结/画像生成链路与客户端配置。 |
+| `src/embeddings/AGENTS.md` | M3E 向量模型加载与编码策略。 |
+| `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤。 |
+| `src/qa/AGENTS.md` | QA 引擎 + 监控/缓存职责、配置键说明。 |
+| `src/scripts/AGENTS.md` | QA/Vectordb CLI 参数、输出与错误处理。 |
+| `tests/AGENTS.md` | 测试覆盖、跳过条件与烟囱测试说明。 |
+
+### @CLAUDE.md 索引
+| 路径 | 职责概述 |
+| --- | --- |
+| `CLAUDE.md` | 高层概览、架构与端到端用法。 |
+| `src/CLAUDE.md` | 核心管线详细说明、文件/数据流与配置示例。 |
+| `src/renderer/CLAUDE.md` | 渲染模块设计、两步转换策略及依赖。 |
+| `src/extractor/CLAUDE.md` | 文本抽取设计、数据模型与边界情况。 |
+| `src/summarizer/CLAUDE.md` | 单页总结/画像提示词、LLM 客户端及错误处理。 |
+| `src/embeddings/CLAUDE.md` | 向量模型选择、缓存、设备策略与性能提示。 |
+| `src/vectordb/CLAUDE.md` | Chroma 集成、检索护栏与统计/维护命令。 |
+| `src/qa/CLAUDE.md` | QA Engine 提示构建、输出格式与 guardrail 逻辑。 |
+| `src/scripts/CLAUDE.md` | CLI 使用案例、参数说明与常见故障排查。 |
 
 ## External Consulting Agent (Future)
 

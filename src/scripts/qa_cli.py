@@ -7,6 +7,7 @@ import click
 from src.config import Settings
 from src.embeddings import M3EEmbedding
 from src.qa import QAEngine
+from src.qa.qa_monitor import QAMonitor
 from src.summarizer import LLMClient
 from src.vectordb import ChromaStore
 
@@ -45,7 +46,8 @@ def cli(question: str, project: str | None, config: str, top_k: int, top_n: int,
     )
 
     llm_client = LLMClient(settings)
-    qa_engine = QAEngine(store=store, llm_client=llm_client)
+    monitor = QAMonitor(settings=settings, embedding_model=embedding_model)
+    qa_engine = QAEngine(store=store, llm_client=llm_client, monitor=monitor)
 
     # 执行问答
     result = qa_engine.answer(
@@ -69,8 +71,14 @@ def cli(question: str, project: str | None, config: str, top_k: int, top_n: int,
             click.echo(f"详情: {result['error']}")
         sys.exit(1)
 
+    cache_status = result.get("cache_status")
+    cache_level = result.get("cache_level")
+    cache_prefix = ""
+    if cache_status == "hit":
+        cache_prefix = f"[cache hit/{cache_level or 'exact'}] "
+
     click.echo("回答:\n")
-    click.echo(result.get("answer", ""))
+    click.echo(f"{cache_prefix}{result.get('answer', '')}")
 
     sources = result.get("sources", [])
     if sources:
