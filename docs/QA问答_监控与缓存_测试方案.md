@@ -7,7 +7,7 @@
 
 ## 2. 前置条件
 - 环境：Python 3.10+，已安装 `requirements.txt`；可访问 `chroma_db/`；可写 `logs/qa_sessions/`。
-- 配置：基于 `config/settings.example.yaml` 生成实际配置，关注键 `qa.monitor_enabled`、`qa.monitor_sample_rate`、`qa.cache_enabled`、`qa.cache_ttl_days`、`qa.cache_semantic_enabled`、`qa.cache_semantic_threshold`、`qa.vectordb_version`。
+- 配置：基于 `config/settings.example.yaml` 生成实际配置，关注键 `qa.monitor_enabled`、`qa.monitor_sample_rate`、`qa.cache_enabled`、`qa.cache_ttl_days`、`qa.cache_semantic_enabled`（已默认为 false，语义缓存下线）、`qa.vectordb_version`。
 - 数据：准备一个小型 PPT 输入，确保向量库已构建；LLM 使用 `LLM_PROVIDER=mock`。
 
 ## 3. 测试项与用例要点
@@ -17,9 +17,8 @@
 - TTL 过期后再次提问应重新调用检索与 LLM，`cache_status=expired`。
 - `vectordb_version` 变更后缓存应整体失效，命中率归零。
 
-### 3.2 语义缓存（可选）
-- 开启 `qa.cache_semantic_enabled=true` 且阈值 0.9：相似表述应记录 `cache_status=semantic_hit`，附带 `semantic_score`。
-- 阈值调低至 0.7 时验证误命中风险：低相关问题不应命中；必要时再走检索。
+### 3.2 语义缓存（已下线）
+- 语义缓存功能已关闭，不再对历史问题做相似度匹配；如需验证旧行为，可在分支上启用但不建议在现网开启。
 
 ### 3.3 监控日志完整性
 - `logs/qa_sessions/qa_logs_YYYYMMDD.jsonl` 每次问答一条，包含 question_id、retrieval、llm、cache_status、latency_ms、trace_id。
@@ -27,7 +26,7 @@
 - 采样：`qa.monitor_sample_rate=0.5` 时重复 10 次提问，日志数量约为 50%（允许浮动）。
 
 ### 3.4 CLI 交互与输出
-- 命中缓存时 CLI 输出前缀 `[cache hit]` 或 `[semantic hit]`，并返回缓存答案。
+- 命中缓存时 CLI 输出前缀 `[cache hit]`，并返回缓存答案；无语义命中前缀。
 - 关闭缓存 `qa.cache_enabled=false` 时，所有请求均为 miss，日志仍记录。
 - CLI 参数覆盖配置：`--monitor-debug` 开启后应写入 debug 字段；关闭配置不受影响。
 
@@ -43,7 +42,7 @@
 ## 4. 测试步骤建议
 1) 构建向量库（如需）：`python -m src --input ppts/<sample>.pptx --output ppt_outputs/<sample> --force`。
 2) 运行 CLI 基线：`python -m src.scripts.qa_cli -q "样例问题" --config config/settings.yaml`，确认 miss 与日志生成。
-3) 重复同问，验证 cache hit；修改配置测试语义缓存与阈值。
+3) 重复同问，验证 cache hit；语义缓存用例已取消。
 4) 切换 `qa.monitor_sample_rate` 与 `qa.monitor_debug_mode`，比对日志文件数量与内容。
 5) 模拟故障：手动锁定日志目录或破坏缓存文件，观察降级表现。
 

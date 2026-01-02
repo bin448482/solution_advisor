@@ -60,7 +60,7 @@ python -m src.scripts.vectordb_cli delete --project ChatBI
 ```bash
 python -m src.scripts.qa_cli -q ChatBI的核心功能是什么 -p ChatBI --config config/settings.yaml --top-k 8 --top-n 5 --tau 0.5
 ```
-- CLI 默认启用 `QAMonitor`：命中缓存会在答案前打印 `[cache hit/<level>]`，日志与精确缓存写 `logs/qa_sessions/qa_logs_YYYYMMDD.jsonl` / `qa_cache.jsonl`，语义缓存写入 Chroma collection `qa_cache`（TTL=7d，可用 `qa.cache.vectordb_version` 统一失效）。
+- CLI 默认启用 `QAMonitor`：命中缓存会在答案前打印 `[cache hit/<level>]`，日志与精确缓存写 `logs/qa_sessions/qa_logs_YYYYMMDD.jsonl` / `qa_cache.jsonl`；语义缓存已下线，命中仅依赖精确缓存（TTL=7d，可用 `qa.cache.vectordb_version` 统一失效）。
 
 - 输入：问题必填；可选 project 过滤。
 - 输出：answer + sources + status（success/no_context/error）。

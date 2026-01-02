@@ -34,7 +34,7 @@ def _init_engine(settings: Settings) -> Tuple[QAEngine, DialogueOrchestrator]:
         embedding_model=embedding_model,
     )
     llm_client = LLMClient(settings)
-    monitor = QAMonitor(settings=settings, embedding_model=embedding_model)
+    monitor = QAMonitor(settings=settings)
     qa_engine = QAEngine(store=store, llm_client=llm_client, monitor=monitor)
 
     guided_cfg = getattr(settings.qa, "guided", None)

@@ -47,7 +47,7 @@ def cli(question: str, project: str | None, config: str, top_k: int, top_n: int,
     )
 
     llm_client = LLMClient(settings)
-    monitor = QAMonitor(settings=settings, embedding_model=embedding_model)
+    monitor = QAMonitor(settings=settings)
     qa_engine = QAEngine(store=store, llm_client=llm_client, monitor=monitor)
 
     # 执行问答

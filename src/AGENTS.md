@@ -5,7 +5,7 @@ Purpose: Python MVP pipeline turning PPT → slide images → page summaries →
 Key modules:
 - `config.py`: env-driven `Settings` (LLM provider/api key/model, render tools, workers, DPI).
 - `pipeline.py`: orchestrates render → extract → per-page summarize (threaded) → profile; writes manifest and JSON outputs.
-- `qa/qa_monitor.py`: 监控与缓存门面，JSONL 日志 + 精确/语义缓存（Chroma collection `qa_cache`，TTL 默认 7 天，版本绑定 `qa.cache.vectordb_version`）；`qa_engine.py` 可注入。
+- `qa/qa_monitor.py`: 监控与缓存门面，JSONL 日志 + 精确缓存（内存索引 + `logs/qa_sessions/qa_cache.jsonl`，TTL 默认 7 天，绑定 `qa.cache.vectordb_version`）；语义缓存已移除；`qa_engine.py` 可注入。
 - `qa/dialogue_orchestrator.py`: 引导式对话封装（LangGraph + 模板 gap/follow-up），供 Gradio/CLI 复用。
 - `utils.py`: hashing, JSON IO, command runner, data URL encoding, path helpers.
 - `__main__.py`: CLI `python -m src --input <pptx> --output <dir> [--force] [-v]`.

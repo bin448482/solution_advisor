@@ -7,11 +7,11 @@ Provides a thin orchestration layer that turns retrieved Chroma results into a s
 - **QAEngine (qa_engine.py)**  
   - Constructor expects `ChromaStore`, `LLMClient`, and optional `QAMonitor`.  
   - `answer(question, project_name=None, top_k=8, top_n=5, tau=0.5)`:
-    1) 尝试 `QAMonitor` 精确/语义缓存命中（默认启用，TTL=7d，绑定 `qa.cache.vectordb_version`）。  
+    1) 尝试 `QAMonitor` 精确缓存命中（TTL=7d，绑定 `qa.cache.vectordb_version`）。语义缓存已移除。  
     2) 未命中则调用 `store.query_with_guardrails`，重排后构建上下文。  
     3) 调用 LLM 生成回答，返回 `{answer, sources, status, cache_status?, cache_level?}`；监控日志写入 `logs/qa_sessions/qa_logs_YYYYMMDD.jsonl`。
 - **QAMonitor (qa_monitor.py)**  
-  - JSONL 日志 + 本地精确缓存（`qa_cache.jsonl`）；可选语义缓存写入 Chroma collection `qa_cache`。  
+  - JSONL 日志 + 本地精确缓存（`qa_cache.jsonl`）；加载为内存索引，语义缓存路径已下线。  
   - 主要方法：`normalize_question`、`build_question_id`、`get_cache`、`save_cache`, `log_event`.
 
 ## Prompt (summary)
@@ -34,7 +34,7 @@ embedding = M3EEmbedding(settings.embedding_model, settings.embedding_device, se
 store = ChromaStore(settings.vectordb_persist_dir, settings.vectordb_collection_name, embedding)
 llm = LLMClient(settings)
 
-qa = QAEngine(store, llm, monitor=QAMonitor(settings, embedding))
+qa = QAEngine(store, llm, monitor=QAMonitor(settings))
 result = qa.answer("ChatBI的核心功能是什么", project_name="ChatBI")
 ```
 

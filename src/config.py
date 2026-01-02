@@ -16,7 +16,9 @@ class QACacheSettings(BaseModel):
     cache_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
     cache_ttl_days: int = Field(default=7, ge=1)
     cache_backend: str = Field(default="jsonl")
-    cache_semantic_enabled: bool = Field(default=True)
+    cache_semantic_enabled: bool = Field(
+        default=False, description="Deprecated: semantic cache removed; kept for config compatibility."
+    )
     cache_semantic_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
     cache_collection: str = Field(default="qa_cache")
     cache_persist_dir: str = Field(default="./chroma_db")

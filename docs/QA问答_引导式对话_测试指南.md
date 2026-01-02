@@ -30,10 +30,10 @@ qa:
     cache_sample_rate: 1.0
     cache_ttl_days: 7
     cache_backend: jsonl
-    cache_semantic_enabled: true
-    cache_semantic_threshold: 0.85
-    cache_collection: qa_cache
-    cache_persist_dir: ./chroma_db
+    cache_semantic_enabled: false       # 语义缓存已下线，仅保留精确缓存
+    cache_semantic_threshold: 0.85       # 保留字段，无效
+    cache_collection: qa_cache           # 保留字段
+    cache_persist_dir: ./chroma_db       # 保留字段
     vectordb_version: v1
   guided:
     enabled: true
@@ -180,7 +180,7 @@ store = ChromaStore(
     embedding_model=embedding_model,
 )
 llm_client = LLMClient(settings)
-monitor = QAMonitor(settings=settings, embedding_model=embedding_model)
+monitor = QAMonitor(settings=settings)
 qa_engine = QAEngine(store=store, llm_client=llm_client, monitor=monitor)
 
 templates = get_guided_templates("src/prompts/guided_templates.yaml")

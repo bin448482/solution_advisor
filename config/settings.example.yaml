@@ -32,10 +32,10 @@ qa:
     cache_sample_rate: 1.0
     cache_ttl_days: 7
     cache_backend: jsonl                 # jsonl | sqlite (sqlite reserved)
-    cache_semantic_enabled: true
-    cache_semantic_threshold: 0.9
-    cache_collection: qa_cache
-    cache_persist_dir: ./chroma_db
+    cache_semantic_enabled: false        # semantic cache removed; keep false
+    cache_semantic_threshold: 0.9        # reserved (ignored when semantic cache disabled)
+    cache_collection: qa_cache           # reserved
+    cache_persist_dir: ./chroma_db       # reserved
     vectordb_version: v1
   guided:
     enabled: true

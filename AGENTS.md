@@ -68,7 +68,7 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 | `src/prompts/AGENTS.md` | 统一管理问答/总结/画像的 Prompt 文本与加载器。 |
 | `src/embeddings/AGENTS.md` | M3E 向量模型加载、设备选择与批量编码策略。 |
 | `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤约定。 |
-| `src/qa/AGENTS.md` | QA 引擎、监控与缓存（JSONL + 语义缓存）职责与配置。 |
+| `src/qa/AGENTS.md` | QA 引擎、监控与缓存（JSONL 精确缓存，语义缓存已移除）职责与配置。 |
 | `src/scripts/AGENTS.md` | CLI 工具（qa_cli、vectordb_cli）参数与输出规范。 |
 | `tests/AGENTS.md` | 测试覆盖范围、跳过条件与烟囱测试说明。 |
 
@@ -76,6 +76,6 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 - Python pipeline lives in `src/` with CLI entry `python -m src --input ppts/... --output ppt_outputs/... --force`.
 - Core pieces: rendering (`renderer/libreoffice.py`), text extraction (`extractor/ppt_extractor.py`), LLM summarization (`summarizer/`), orchestration (`pipeline.py`), config (`config.py`), CLI (`__main__.py`), utilities (`utils.py`).
 - RAG 文档生成：`rag.py` + `pipeline.py` 将单页/画像转换为 `ppt_outputs/<ppt>/embeddings/rag_documents.json`，同时在 manifest 中记录 `rag_documents` 数量。
-- QA 问答：`src/qa/qa_engine.py` + `src/scripts/qa_cli.py`，调用 `ChromaStore.query_with_guardrails` + `LLMClient.generate`，默认 top_k=8 / top_n=5 / tau=0.5；可选监控/缓存中间层（`QAMonitor`）写 `logs/qa_sessions/*.jsonl`，提供精确/语义命中与 TTL/VDB 版本绑定。
+- QA 问答：`src/qa/qa_engine.py` + `src/scripts/qa_cli.py`，调用 `ChromaStore.query_with_guardrails` + `LLMClient.generate`，默认 top_k=8 / top_n=5 / tau=0.5；可选监控/缓存中间层（`QAMonitor`）写 `logs/qa_sessions/*.jsonl`，仅提供精确命中（TTL/VDB 版本绑定），语义缓存已下线。
 - Tests under `tests/` include model sanity and an e2e smoke that requires `soffice` + `pdftoppm` and uses `LLM_PROVIDER=mock`.
 - Dependencies listed in `requirements.txt`; config template in `config/settings.example.yaml`; usage in `README.md`.
