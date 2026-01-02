@@ -47,6 +47,7 @@ YAML-based configuration system:
 - LLM configuration: provider, api_key, base_url, model, temperature
 - Rendering: render_dpi, libreoffice_path, pdftoppm_path
 - Processing: max_workers (for parallel summarization)
+- RAG feature toggles: `enable_llm_classify`, `enable_topic_chunks`, `enable_step_chunks`, `enable_metrics_chunks`（默认 false，降低成本且便于回滚）
 
 **Loading**:
 ```python
@@ -105,6 +106,7 @@ Main orchestration logic:
 - Coordinates all pipeline stages
 - Handles errors gracefully (continue on single-slide failures)
 - Writes manifest with metadata and errors
+- RAG 阶段按 Settings 开关执行：LLM 分类可关；topic/step/metrics chunk 可按需生成；refine 复用相同 RAG 逻辑保持 rag_documents 一致。
 
 **Pipeline Stages**:
 1. **Idempotency Check**: Compare PPTX hash with previous run
@@ -169,7 +171,7 @@ PPTX Input
 - `libreoffice_path`: Path to soffice (default: "soffice")
 - `pdftoppm_path`: Path to pdftoppm (default: "pdftoppm")
 
-**Mock Mode**: Set `llm_provider: mock` for testing without API calls
+**Mock Mode**: Set `llm_provider: mock` for testing without API calls；RAG QA 生成使用内置伪造问答，保证 `rag_documents.json` 完整。
 
 ## Error Handling
 

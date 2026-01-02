@@ -11,7 +11,7 @@ The RAG v2 package implements a QA-pair-centric approach to RAG document generat
 ```
 PageSummary
     ↓
-[QAGenerator] → 5-10 QA pairs per slide
+[QAGenerator] → 5-10 QA pairs per slide（mock provider 时生成确定性伪造 QA，避免 JSON 解析失败）
     ↓
 [LLMClassifier] → Batch classify (8 categories)
     ↓
@@ -87,7 +87,8 @@ class ChunkDocument(BaseModel):
 
     # Legacy fields (for compatibility)
     "page_type": ["data_sources", "integration"],
-    "entities": ["ChatBI", "MySQL", "PostgreSQL"]
+    "entities": ["ChatBI", "MySQL", "PostgreSQL"],
+    "source_slide_refs": [3]
 }
 ```
 
@@ -212,6 +213,7 @@ Replaces the old single-chunk generation with QA-pair approach:
 3. **Generate Chunks** (qa/topic/step/metrics based on decision logic)
 4. **Add Overview** (project-level chunk)
 5. **Save** to `embeddings/rag_documents.json`
+6. **Feature toggles**: `Settings.enable_llm_classify` 决定是否执行第 2 步；`enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks` 控制可选 chunk 生成，默认关闭以控成本/便于回滚。
 
 ### Error Handling
 
@@ -291,6 +293,7 @@ cat ppt_outputs/demo/embeddings/rag_documents.json | jq '.[] | .metadata.chunk_t
 - 0-5 step chunks per slide (if sequential)
 - 0-2 metrics chunks per slide (if performance data)
 - 1 overview chunk per project
+ - 元数据包含 `source_slide_refs`；写入 Chroma 前所有 list 元数据将 JSON 字符串化。
 
 ## Migration from Legacy
 

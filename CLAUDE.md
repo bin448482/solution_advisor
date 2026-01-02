@@ -218,7 +218,11 @@ config/settings.example.yaml  # template with placeholders
 ```
 CLI flag `--config` overrides the path; otherwise defaults to `config/settings.yaml`.
 
-**Mock Provider for Testing**: For offline testing or when LLM API is unavailable, set `llm_provider: mock` in settings.yaml. Mock mode returns the prompt as output without API calls, enabling pipeline testing without external dependencies.
+**Mock Provider for Testing**: For offline testing or when LLM API is unavailable, set `llm_provider: mock` in settings.yaml. 模式下 QA 生成走内置伪造问答（不依赖外部 LLM），保证 RAG 产物完整且可用于冒烟。
+
+**RAG Feature Toggles（成本/回滚控制）**：
+- `enable_llm_classify`：是否调用 LLM 分类 QA 对（默认 false）
+- `enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks`：是否生成对应 chunk（默认 false）
 
 ### Vector Database Configuration
 
