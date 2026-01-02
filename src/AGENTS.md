@@ -6,7 +6,9 @@ Key modules:
 - `config.py`: env-driven `Settings` (LLM provider/api key/model, render tools, workers, DPI).
 - `pipeline.py`: orchestrates render → extract → per-page summarize (threaded) → profile; writes manifest and JSON outputs.
 - `qa/qa_monitor.py`: 监控与缓存门面，JSONL 日志 + 精确/语义缓存（Chroma collection `qa_cache`，TTL 默认 7 天，版本绑定 `qa.cache.vectordb_version`）；`qa_engine.py` 可注入。
+- `qa/dialogue_orchestrator.py`: 引导式对话封装（LangGraph + 模板 gap/follow-up），供 Gradio/CLI 复用。
 - `utils.py`: hashing, JSON IO, command runner, data URL encoding, path helpers.
 - `__main__.py`: CLI `python -m src --input <pptx> --output <dir> [--force] [-v]`.
+- `scripts/qa_gradio.py`: Gradio Web UI 入口（按钮式追问，支持项目过滤）。
 
 Dependencies: LibreOffice `soffice`, Poppler `pdftoppm`; LangChain + providers (OpenAI/Anthropic/local), python-pptx, Pillow, pydantic. Set via `.env` or CLI overrides; `LLM_PROVIDER=mock` enables offline summaries.

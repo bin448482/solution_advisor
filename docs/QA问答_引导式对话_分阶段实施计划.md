@@ -1,18 +1,16 @@
 # QA 引导式对话 - 完整实施计划
 
 ## 目标
-将现有单轮 QA 系统扩展为引导式多轮对话，支持交互式 CLI 模式。
+将现有单轮 QA 系统扩展为引导式多轮对话，交互以 Gradio Web UI 为主，CLI 仅作备份。
 
 ## 用户选择
 - **实施范围**：全部三阶段
-- **交互模式**：交互式多轮 CLI
+- **交互模式**：Gradio Web UI（主）；CLI 仅备份
 - **编排框架**：LangChain Agents + LangGraph（LCEL）。当前仅实现 LangGraph 路径；`legacy` 回退未实现，如需纯函数版需后续补充。
 
 ## 总体架构
 ```
-用户输入
-  ↓
-[qa_cli.py] --guided 模式，交互式循环
+用户输入（Gradio Web UI）
   ↓
 [DialogueOrchestrator]（LangGraph 节点图）状态管理 + 编排
   ├─ clarify_if_needed() → 槽位澄清
@@ -21,7 +19,7 @@
   ↓
 [QAEngine.answer()] 原有检索 + LLM 回答
   ↓
-输出答案 + 建议选项 → 用户选择 → 循环
+输出答案 + 建议选项按钮 → 用户点击 → 循环
 ```
 
 ---
@@ -32,7 +30,7 @@
 - 检测"无结果"场景，返回引导性追问
 - 命中时附带 2-3 条模板化后续建议
 - 不引入槽位系统，不改动 QAEngine 核心逻辑
-- 建立 LangGraph 最小骨架（节点：`retrieve`、`gap_prompt`、`follow_up`），CLI 开关默认使用 LangGraph。
+- 建立 LangGraph 最小骨架（节点：`retrieve`、`gap_prompt`、`follow_up`），guided 开关（Gradio 主 + CLI 备份）默认使用 LangGraph。
 
 ### 改动文件
 
@@ -161,64 +159,10 @@ follow_ups_by_module:
     - "需要更详细的说明吗？"
 ```
 
-**3. 扩展 `src/scripts/qa_cli.py`**
-```python
-# 新增 imports
-import yaml
-from src.qa.dialogue_orchestrator import DialogueOrchestrator, DialogueState
-
-# 新增参数（Click）
-@click.option("--guided", is_flag=True, help="启用引导式多轮对话模式")
-
-# 加载模板函数
-def load_guided_templates(path: str = "src/prompts/guided_templates.yaml") -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-# 交互式循环（在 cli 函数内，统一 Click 风格）
-def guided_loop(orchestrator: DialogueOrchestrator, initial_question: str = None, project: str = None):
-    state = DialogueState()
-    if project:
-        state.slots["project_name"] = project
-
-    question = initial_question
-    while True:
-        if not question:
-            question = click.prompt("\n🔍 请输入问题（q 退出）", default="", show_default=False)
-            if question.lower() in ("q", "quit", "exit", ""):
-                break
-
-        state.question_raw = question
-        state = orchestrator.graph.invoke(state)
-        result = state.last_result
-
-        click.echo(f"\n📝 {result.get('answer', '')}")
-        if result.get("sources"):
-            click.echo("   来源: " + ", ".join(
-                f\"{s['project']}:第{s['slide_no']}页\" for s in result.get(\"sources\", [])[:3]
-            ))
-
-        suggestions = result.get("suggestions", [])
-        if suggestions:
-            click.echo("\n💡 您可能还想问：")
-            for i, s in enumerate(suggestions, 1):
-                click.echo(f"  {i}. {s}")
-            choice = click.prompt("请选择（0 输入新问题）", default="0", show_default=False)
-            if choice.isdigit() and 1 <= int(choice) <= len(suggestions):
-                question = suggestions[int(choice) - 1]
-                continue
-
-        question = None
-    click.echo("\n👋 再见！")
-
-# 在 cli() 主函数中
-if guided:
-    templates = load_guided_templates()
-    orchestrator = DialogueOrchestrator(qa_engine, templates)
-    guided_loop(orchestrator, question, project)
-else:
-    result = qa_engine.answer(...)
-```
+**3. 扩展 `src/scripts/qa_cli.py`（备用）**
+- 保留 `--guided` 开关以便无浏览器环境调试；默认不对用户暴露。
+- 逻辑与 Gradio 对齐：缺项目名提示列表，返回答案/来源/推荐追问，`q/quit/exit` 退出。
+- 详细循环示例移至附录，主文档仅记录存在性与对齐原则。
 
 **4. 扩展 `config/settings.example.yaml`**
 ```yaml
@@ -292,24 +236,9 @@ class DialogueOrchestrator:
         return enriched
 ```
 
-**2. 扩展 CLI 交互**
-```python
-# 交互式槽位收集
-if args.guided:
-    state = DialogueState()
-    clarify = orchestrator.clarify_if_needed(args.question, state)
-
-    if clarify["needs_clarify"]:
-        print(clarify["clarify_text"])
-        for i, p in enumerate(clarify["slot_candidates"]["project_name"], 1):
-            print(f"  {i}. {p}")
-        choice = input("请选择（输入序号或项目名）: ")
-        state = orchestrator.apply_slot_selection({"project_name": choice}, state)
-
-    # 使用增强后的 query
-    enriched_q = orchestrator.enrich_query(args.question, state.slots)
-    result = orchestrator.answer_with_guidance(enriched_q, state.slots.get("project_name"))
-```
+**2. CLI 备用交互（摘要）**
+- 仅供开发/排障，详见文末附录；默认用户界面为 Gradio Web UI。
+- 逻辑与 Gradio 保持一致：若缺 `project_name`，提示项目列表；选定后重试检索。
 
 **3. 扩展模板**
 ```yaml
@@ -431,7 +360,7 @@ def _filter_duplicates(self, suggestions, state):
 
 ## 风险与缓解
 
-1. **CLI 交互体验差** → 阶段 1 仅展示建议，不强制多轮；阶段 2 可选跳过澄清
+1. **CLI 交互体验差** → 已改用 Gradio 为主；CLI 仅作备份，默认不对外
 2. **LLM 输出不稳定** → 阶段 3 有完整降级链路（LLM → 模板）
 3. **槽位噪声影响检索** → 槽位仅用于 project 过滤，不改动 query 语义
 4. **成本增加** → 阶段 1-2 不增加 LLM 调用；阶段 3 限制 max_tokens
@@ -468,7 +397,7 @@ def _filter_duplicates(self, suggestions, state):
 1. **阶段 1**（1-2 天）
    - DialogueOrchestrator 基础框架
    - 模板化 gap_prompt + follow_up
-   - CLI 交互循环骨架
+   - CLI 备用示例（开发/排障，见附录）
 
 2. **阶段 2**（2-3 天）
    - DialogueState 状态管理
@@ -498,3 +427,11 @@ def _filter_duplicates(self, suggestions, state):
 - Mock LLM + 固定检索结果
 - 验证完整交互流程
 - 检查日志字段完整性
+
+---
+
+## 附录：CLI 备用交互（简要）
+- 适用场景：无浏览器/远程 SSH 排障；验证 Orchestrator 行为。
+- 入口命令：`python -m src.scripts.qa_cli --guided --question "<问句>" --project <项目>`。
+- 交互规则（精简版）：输入问句 → 若需澄清则提示序号选择 → 返回答案与来源 → 推荐追问以序号选择或输入新问题；输入 `q/quit/exit` 结束。
+- 限制：无 UI 按钮/下拉，建议仅用于开发环境；正式演示与用户使用一律走 Gradio Web UI。

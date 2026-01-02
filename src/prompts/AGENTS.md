@@ -6,12 +6,14 @@
 - `qa_zh.txt`：RAG 问答主提示，包含 `{context}` / `{question}` 占位符。
 - `page_summary_zh.txt`：单页总结 JSON 输出提示。
 - `project_profile_zh.txt`：项目画像 JSON 输出提示。
+- `guided_templates.yaml`：引导式对话模板（gap prompts、follow-ups 按模块）。
 - `__init__.py`：缓存读取器，提供 `get_qa_prompt` / `get_page_summary_prompt` / `get_project_profile_prompt`。
 
 主要消费者：
 - `src/qa/qa_engine.py` 构建问答 prompt。
 - `src/summarizer/page_summarizer.py` 单页总结。
 - `src/summarizer/profile_generator.py` 项目画像生成。
+- `src/qa/dialogue_orchestrator.py` 加载 `guided_templates`。
 
 维护约定：
 - 保持 `.txt` 为纯模型输入，不写说明性文字；如需备注，放在本文件或 `CLAUDE.md`。
