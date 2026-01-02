@@ -233,6 +233,7 @@ class QAEngine:
                     "slide_no": slide_no,
                     "similarity": similarity,
                     "level": level,
+                    "page_type": metadata.get("page_type", []),
                 }
             )
 

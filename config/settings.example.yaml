@@ -37,3 +37,9 @@ qa:
     cache_collection: qa_cache
     cache_persist_dir: ./chroma_db
     vectordb_version: v1
+  guided:
+    enabled: true
+    engine: langgraph                    # langgraph (legacy not implemented yet)
+    suggestion_count: 3
+    templates_path: src/prompts/guided_templates.yaml
+    gap_similarity_threshold: 0.5

@@ -8,8 +8,10 @@
   - “无结果”占比降低 ≥30%。
   - 用户补充信息率 ≥50%（在首轮澄清后提供至少 1 个槽位值）。
 
-## 2. 设计原则
-- 最小侵入：不重写 QAEngine 流程，新增对话编排层包装原有接口。
+## 2. 框架选型与设计原则
+- **框架选型**：默认采用 LangChain Agents + LangGraph（LCEL）作为引导式对话的编排层。理由：状态化图式编排、可中断/恢复、支持工具流与人类介入，社区活跃且 API 稳定；保持 MIT 许可。AutoGen 处于迁移期、LlamaIndex AgentRunner 已弃用。
+- **暂不提供 legacy 分支**：当前代码仅实现 LangGraph 路径；如需纯函数/legacy 回退，后续补充并通过 `qa.guided.engine=legacy` 启用，现阶段配置仅接受 `langgraph`。
+- 最小侵入：不重写 QAEngine 流程，新增 LangGraph 图编排层包装原有接口。
 - 可配置：槽位、引导文案、推荐问题模板通过 YAML/JSON 配置。
 - 可回退：保留现有单问单答模式，配置开关一键关闭引导。
 - 可观测：沿用监控/缓存日志结构，追加引导阶段事件。
@@ -18,13 +20,14 @@
 ```
 用户输入
   ↓（复述 + 槽位澄清 + 推荐问题）
-Dialogue Orchestrator（新）
+Dialogue Orchestrator / LangGraph（新）
   ↓（填充槽位 → 查询参数）
 QAEngine.answer（原） + ChromaStore + LLM
   ↓
 回答 + 下一步引导选项（按钮式文案/CLI 文本）
 ```
-- 新增 **Dialogue Orchestrator**：维护对话状态、槽位、推荐问题生成，封装检索调用。
+- 新增 **Dialogue Orchestrator**（基于 LangGraph）：维护对话状态、槽位、推荐问题生成，封装检索调用。
+- 图节点建议：`clarify` → `fill_slots` → `retrieve` → `gap_prompt` / `follow_up` → `persist_state`，便于后续扩展重试与中断恢复。
 - 未命中或低置信时走“信息缺口提示”分支，返回可选追问；命中后附“下一步”推荐。
 
 ## 4. 对话流程（状态机）
@@ -49,8 +52,9 @@ QAEngine.answer（原） + ChromaStore + LLM
 ## 6. 组件改造清单
 - 新增：`src/qa/dialogue_orchestrator.py`
   - 维护 `DialogueState`（槽位、最近命中、历史问题）。
-  - `build_clarify_message(question)` 返回澄清文案 + 可选项。
-  - `enrich_query(question, slots)` 生成检索 query/filters。
+  - LangGraph：`build_state_graph()` 返回 `StateGraph[DialogueState]`，包含节点 `clarify_node`、`fill_slots_node`、`retrieve_node`、`gap_prompt_node`、`follow_up_node`、`persist_state_node`。
+  - 条件边 `route_after_retrieve`：根据 `retrieval_score` / `status` 选择 `gap_prompt` 或 `follow_up`。
+  - `enrich_query(question, slots)` 生成检索 query/filters；支持 `page_type` 过滤（依赖 QAEngine/ChromaStore 提供）。
   - `next_suggestions(context)` 基于命中模块推送后续引导。
 - Orchestrator 默认使用 LLM（可退化为纯模板）：
   - clarify：LLM 复述问题 + 产出候选槽位值（受控列表内）。
@@ -61,11 +65,16 @@ QAEngine.answer（原） + ChromaStore + LLM
   - 槽位去重：已填槽位不再出现在后续澄清/追问候选；LLM 接口入参需附 `filled_slots`，提示“不要再次请求这些槽位”。
 - 扩展：`src/scripts/qa_cli.py`
   - 增加 `--guided` 开关（默认开启），驱动 Orchestrator。
-  - CLI 交互：打印选项编号，读取用户选择；保留原 `--once` 模式。
+  - CLI 交互：统一使用 `click.echo/prompt/confirm`，不再混用 `print/input`。
+  - 现阶段仅支持 `--guided-engine=langgraph`；若输入 `legacy` 提示“未实现”并回退到 `langgraph`。
 - 配置：`config/settings.example.yaml`
-  - `qa.guided.enabled`、`qa.guided.slots`、`qa.guided.templates_path`、`qa.guided.suggestion_count`、`qa.guided.gap_similarity_threshold`。
+  - `qa.guided.enabled`
+  - `qa.guided.engine`（当前仅接受 `langgraph`；未来支持 `legacy`）
+  - `qa.guided.slots`、`qa.guided.templates_path`、`qa.guided.suggestion_count`、`qa.guided.gap_similarity_threshold`。
 - 数据：新增模板文件 `src/prompts/guided_templates.yaml`（槽位、推荐问题、文案片段）。
-- 监控：在现有 QA 日志中新增 `dialogue_phase`、`slots_filled`、`suggestions_shown`、`path_taken`。
+- 监控：在现有 QA 日志中新增 `dialogue_phase`、`slots_filled`、`suggestions_shown`、`path_taken`；新增 `graph_node`、`graph_attempt`、`repeat_blocked_count`、`fallback_rate`、`unanswerable_detected`。
+- 依赖与安装：`pip install langgraph>=0.1.0 langchain>=0.3`；若运行环境无法安装 LangGraph，CLI 需提示“缺少 langgraph，暂不支持 legacy 回退”并退出（待实现 legacy 时再开放降级）。
+- 检索元数据要求：`QAEngine.answer`/`ChromaStore.query_with_guardrails` 需返回 `page_type`、`level`、`project`、`slide_no`，用于 follow-up 生成与过滤。
 
 ## 7. 数据结构与接口
 - `DialogueState`：

@@ -23,9 +23,18 @@ class QACacheSettings(BaseModel):
     vectordb_version: str | int = Field(default="v1")
 
 
+class QAGuidedSettings(BaseModel):
+    enabled: bool = Field(default=True)
+    engine: str = Field(default="langgraph")
+    suggestion_count: int = Field(default=3)
+    templates_path: str = Field(default="src/prompts/guided_templates.yaml")
+    gap_similarity_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
 class QASettings(BaseModel):
     monitor: QAMonitoringSettings = Field(default_factory=QAMonitoringSettings)
     cache: QACacheSettings = Field(default_factory=QACacheSettings)
+    guided: QAGuidedSettings = Field(default_factory=QAGuidedSettings)
 
 
 class Settings(BaseModel):
