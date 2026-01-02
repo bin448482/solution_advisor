@@ -12,7 +12,7 @@ RAG v2 包实现基于 QA 对的多类型 chunk 生成策略，用于优化向�
 
 ### qa_generator.py
 - **入口**：`QAGenerator.generate_qa_pairs(summary, project_name) -> List[QAPair]`
-- **功能**：从 PageSummary 生成 5-10 个问答对
+- **功能**：从 PageSummary 生成 5-10 个问答对；`llm_provider=mock` 时走内置伪造 QA，保证流水线/测试稳定
 - **配置**：`min_confidence=0.3`（过滤低置信度问答）
 - **重试**：3 次指数退避（1s, 2s, 4s）
 
@@ -31,6 +31,7 @@ RAG v2 包实现基于 QA 对的多类型 chunk 生成策略，用于优化向�
   - `generate_overview_chunk(profile, project_name) -> ChunkDocument`
   - `decide_chunk_types(summary) -> List[str]`（决策逻辑）
 - **功能**：生成多种类型的 chunk（qa_pair/topic/step/metrics/overview）
+- **元数据**：包含 `source_slide_refs`，便于追溯；多值字段入库前统一 JSON 字符串化（在 `ChromaStore`）
 
 ### legacy.py
 - **原有逻辑**：单 chunk 生成（已弃用，保留用于参考）
@@ -44,9 +45,9 @@ RAG v2 包实现基于 QA 对的多类型 chunk 生成策略，用于优化向�
 
 ## 配置项
 
-- **QA 生成**：`min_confidence=0.3`（最低置信度）
-- **批量分类**：`batch_size=8`（批大小）
-- **Chunk 决策**：基于关键词检测（步骤/指标/主题）
+- **QA 生成**：`min_confidence=0.3`（最低置信度）；mock 模式启用内置 QA
+- **批量分类**：`batch_size=8`（批大小），受 `Settings.enable_llm_classify` 控制
+- **Chunk 决策**：基于关键词检测（步骤/指标/主题），生成受 `Settings.enable_topic_chunks/enable_step_chunks/enable_metrics_chunks` 控制
 
 ## 运行与测试
 

@@ -175,13 +175,16 @@ class RAGPrepStage:
 
         # Import new RAG modules
         from src.rag.qa_generator import QAGenerator
-        from src.rag.classifier import LLMClassifier
         from src.rag.chunk_generator import ChunkGenerator
 
         project_name = profile.project_name or ctx.pptx_path.stem
         client = LLMClient(ctx.settings)
         qa_generator = QAGenerator(client)
-        classifier = LLMClassifier(client, batch_size=8)
+        classifier = None
+        if ctx.settings.enable_llm_classify:
+            from src.rag.classifier import LLMClassifier
+
+            classifier = LLMClassifier(client, batch_size=8)
         chunk_generator = ChunkGenerator()
 
         all_chunks: List[Dict] = []
@@ -206,14 +209,15 @@ class RAGPrepStage:
 
         # Step 2: Batch classify QA pairs
         all_qa_pairs = [qa for qas in slide_qa_pairs.values() for qa in qas]
-        ctx.log(f"[ragprep] Classifying {len(all_qa_pairs)} QA pairs...")
+        if classifier:
+            ctx.log(f"[ragprep] Classifying {len(all_qa_pairs)} QA pairs...")
 
-        try:
-            categories = classifier.batch_classify(all_qa_pairs, project_name)
-            for qa, category in zip(all_qa_pairs, categories):
-                qa.category = category
-        except Exception as exc:
-            errors.append({"stage": "classification", "error": str(exc)})
+            try:
+                categories = classifier.batch_classify(all_qa_pairs, project_name)
+                for qa, category in zip(all_qa_pairs, categories):
+                    qa.category = category
+            except Exception as exc:
+                errors.append({"stage": "classification", "error": str(exc)})
 
         # Step 3: Generate chunks
         ctx.log(f"[ragprep] Generating chunks...")
@@ -226,13 +230,13 @@ class RAGPrepStage:
 
             # Additional chunk types
             chunk_types = chunk_generator.decide_chunk_types(summary)
-            if "topic" in chunk_types:
+            if "topic" in chunk_types and ctx.settings.enable_topic_chunks:
                 topic_chunks = chunk_generator.generate_topic_chunks(summary, project_name)
                 all_chunks.extend([c.model_dump() for c in topic_chunks])
-            if "step" in chunk_types:
+            if "step" in chunk_types and ctx.settings.enable_step_chunks:
                 step_chunks = chunk_generator.generate_step_chunks(summary, project_name)
                 all_chunks.extend([c.model_dump() for c in step_chunks])
-            if "metrics" in chunk_types:
+            if "metrics" in chunk_types and ctx.settings.enable_metrics_chunks:
                 metrics_chunks = chunk_generator.generate_metrics_chunks(summary, project_name)
                 all_chunks.extend([c.model_dump() for c in metrics_chunks])
 
@@ -458,17 +462,65 @@ class PPTPipeline:
             )
         )
 
-        # RAG prep
+        # RAG prep (reuse QA chunk pipeline)
         rag_start = time.time()
         rag_docs: List[Dict] = []
         if profile:
             project_name = profile.project_name or pptx_path.stem
+
+            from src.rag.qa_generator import QAGenerator
+            from src.rag.chunk_generator import ChunkGenerator
+
+            client_rag = LLMClient(self.settings)
+            qa_generator = QAGenerator(client_rag)
+            chunk_generator = ChunkGenerator()
+
+            classifier = None
+            if self.settings.enable_llm_classify:
+                from src.rag.classifier import LLMClassifier
+
+                classifier = LLMClassifier(client_rag, batch_size=8)
+
+            slide_qa_pairs: Dict[int, List] = {}
+            with ThreadPoolExecutor(max_workers=self.settings.max_workers) as executor:
+                future_map = {
+                    executor.submit(qa_generator.generate_qa_pairs, summary, project_name): summary
+                    for summary in all_summaries
+                }
+                for future in as_completed(future_map):
+                    summary = future_map[future]
+                    try:
+                        qa_pairs = future.result()
+                        slide_qa_pairs[summary.slide_no] = qa_pairs
+                    except Exception as exc:  # noqa: BLE001
+                        errors.append({"stage": "refine_qa_generation", "slide_no": summary.slide_no, "error": str(exc)})
+
+            all_qa_pairs = [qa for qas in slide_qa_pairs.values() for qa in qas]
+            if classifier:
+                try:
+                    categories = classifier.batch_classify(all_qa_pairs, project_name)
+                    for qa, category in zip(all_qa_pairs, categories):
+                        qa.category = category
+                except Exception as exc:  # noqa: BLE001
+                    errors.append({"stage": "refine_classification", "error": str(exc)})
+
             for summary in all_summaries:
-                cleaned_summary, issues = clean_summary_for_embedding(summary)
-                rag_docs.append(prepare_slide_embedding(project_name, cleaned_summary))
-                for issue in issues:
-                    errors.append({"stage": "rag_clean", "slide_no": summary.slide_no, "error": issue})
-            rag_docs.append(prepare_project_embedding(project_name, profile))
+                qa_pairs = slide_qa_pairs.get(summary.slide_no, [])
+
+                qa_chunks = chunk_generator.generate_qa_chunks(qa_pairs, project_name)
+                rag_docs.extend([c.model_dump() for c in qa_chunks])
+
+                chunk_types = chunk_generator.decide_chunk_types(summary)
+                if "topic" in chunk_types and self.settings.enable_topic_chunks:
+                    rag_docs.extend([c.model_dump() for c in chunk_generator.generate_topic_chunks(summary, project_name)])
+                if "step" in chunk_types and self.settings.enable_step_chunks:
+                    rag_docs.extend([c.model_dump() for c in chunk_generator.generate_step_chunks(summary, project_name)])
+                if "metrics" in chunk_types and self.settings.enable_metrics_chunks:
+                    rag_docs.extend([c.model_dump() for c in chunk_generator.generate_metrics_chunks(summary, project_name)])
+
+            overview_chunk = chunk_generator.generate_overview_chunk(profile, project_name)
+            rag_docs.append(overview_chunk.model_dump())
+
             rag_path = output_dir / "embeddings" / "rag_documents.json"
             ensure_dir(rag_path.parent)
             save_json(rag_docs, rag_path)
@@ -483,7 +535,7 @@ class PPTPipeline:
                 duration_seconds=round(time.time() - rag_start, 2),
                 success_count=len(rag_docs),
                 failure_count=0 if rag_docs else 1,
-                notes="vectorsink skipped",
+                notes="vectorsink skipped (refine)",
             )
         )
 

@@ -89,3 +89,11 @@
 
 **状态**：实施计划（可立即执行）  
 **待决策**：是否使用 LLM 分类（成本 vs 质量），是否开启检索侧分类过滤。
+
+---
+
+**2026-01-02 实施同步**  
+- 已落地特性开关：`enable_llm_classify`、`enable_topic_chunks`、`enable_step_chunks`、`enable_metrics_chunks`（配置默认关闭）。  
+- refine 流程与主线保持一致，统一生成 QA/Topic/Step/Metrics/Overview chunk。  
+- 元数据增加 `source_slide_refs`，所有 list 元数据入库前统一序列化为 JSON 字符串，便于追溯与过滤。  
+- mock LLM（测试）下提供确定性 QA 生成，避免 JSON 解析失败导致 rag 文档缺失。

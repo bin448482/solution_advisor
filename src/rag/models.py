@@ -64,6 +64,9 @@ class ChunkMetadata(BaseModel):
     category_id: Optional[str] = None
     category_name: Optional[str] = None
 
+    # Traceability
+    source_slide_refs: Optional[List[int]] = None
+
     # Legacy fields (for compatibility)
     page_type: Optional[List[str]] = None
     entities: Optional[List[str]] = None

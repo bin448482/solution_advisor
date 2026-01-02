@@ -21,6 +21,12 @@ embedding_device: cpu                    # Device: cpu | cuda | mps (Apple Silic
 embedding_batch_size: 32                 # Batch size for embedding generation
 embedding_cache_dir: ./models            # Model cache directory
 
+# RAG feature toggles (cost/回滚保护)
+enable_llm_classify: false               # 是否调用 LLM 分类 QA 对
+enable_topic_chunks: false               # 是否生成 topic chunk
+enable_step_chunks: false                # 是否生成 step chunk
+enable_metrics_chunks: false             # 是否生成 metrics chunk
+
 # QA monitoring & cache
 qa:
   monitor:
