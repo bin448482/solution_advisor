@@ -8,7 +8,11 @@
       "Bash(claude:*)",
       "Bash(python -m src.scripts.vectordb_cli import:*)",
       "Bash(pip install:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(dir:*)",
+      "WebFetch(domain:blog.csdn.net)",
+      "WebFetch(domain:www.geeksforgeeks.org)",
+      "WebFetch(domain:www.33rdsquare.com)"
     ]
   }
 }

@@ -5,28 +5,12 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
+from src.prompts import get_qa_prompt
 from src.qa.qa_monitor import QAMonitor
-
 from src.summarizer.llm_client import LLMClient
 from src.vectordb.chroma_store import ChromaStore
 
-
-PROMPT_TEMPLATE = """
-你是一个专业的解决方案顾问助手。请基于以下检索到的文档内容回答用户问题。
-
-写作要求：
-1. 只能使用文档中出现的信息，不要编造或引入外部知识。
-2. 如果文档中没有相关信息，请明确说明「文档中未提及」。
-3. 结合用户问题，用自然、通俗、连贯的中文表述，尽量把能从文档推断的细节讲清楚，但不要臆测。
-4. 在回答里自然点出来源（如“根据第X页…”）。
-
-检索到的文档:
-{context}
-
-用户问题: {question}
-
-请回答:
-"""
+QA_PROMPT_TEMPLATE = get_qa_prompt()
 
 
 class QAEngine:
@@ -216,7 +200,7 @@ class QAEngine:
     @staticmethod
     def _build_prompt(question: str, contexts: List[str]) -> str:
         context_block = "\n\n".join(contexts)
-        return PROMPT_TEMPLATE.format(context=context_block, question=question)
+        return QA_PROMPT_TEMPLATE.format(context=context_block, question=question)
 
     @staticmethod
     def _normalize_results(results: List[Dict[str, Any]], top_n: int) -> Dict[str, Any]:
@@ -249,8 +233,8 @@ class QAEngine:
                     "slide_no": slide_no,
                     "similarity": similarity,
                     "level": level,
+                    "page_type": metadata.get("page_type", []),
                 }
             )
 
         return {"contexts": contexts, "sources": sources}
-

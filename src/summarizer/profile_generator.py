@@ -2,26 +2,10 @@ import json
 from typing import Dict, List
 
 from src.models import PageSummary, ProjectProfile
+from src.prompts import get_project_profile_prompt
 from src.summarizer.llm_client import LLMClient
 
-PROFILE_PROMPT = """
-你是项目分析师，基于所有单页总结生成项目画像，输出 JSON，字段：
-- project_name
-- positioning
-- target_users (string[])
-- core_value
-- core_capabilities (string[])
-- architecture
-- deployment
-- integrations (string[])
-- differentiators (string[])
-- cases (string[])
-- risks_and_limits (string[])
-- open_questions (string[])
-- evidence_map (dict<string, int[]>)
-
-请保持中文，务必只输出 JSON。
-"""
+PROFILE_PROMPT = get_project_profile_prompt()
 
 
 class ProfileGenerator:

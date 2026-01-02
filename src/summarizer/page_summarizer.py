@@ -3,23 +3,10 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from src.models import PageSummary, SlideText
+from src.prompts import get_page_summary_prompt
 from src.summarizer.llm_client import LLMClient
 
-PAGE_PROMPT = """
-你是产品项目分析助手，请根据幻灯片文本（和可见图片）生成结构化总结，输出 JSON，字段：
-- slide_no (int)
-- title (string)
-- one_liner (string)：一句话中文总结
-- bullets (string[])：3-6 条关键信息
-- image_caption (string)：基于视觉的简短描述（无结构化失败时可为空）
-- details (string)
-- entities (string[])：提到的机构、产品、角色
-- signals (string[])：发现的信号/指标
-- evidence (string[])：证据或来源描述
-- confidence (float 0-1)
-
-请直接输出 JSON，不要添加额外说明。
-"""
+PAGE_PROMPT = get_page_summary_prompt()
 
 
 class PageSummarizer:

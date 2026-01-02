@@ -16,16 +16,27 @@ class QACacheSettings(BaseModel):
     cache_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
     cache_ttl_days: int = Field(default=7, ge=1)
     cache_backend: str = Field(default="jsonl")
-    cache_semantic_enabled: bool = Field(default=True)
+    cache_semantic_enabled: bool = Field(
+        default=False, description="Deprecated: semantic cache removed; kept for config compatibility."
+    )
     cache_semantic_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
     cache_collection: str = Field(default="qa_cache")
     cache_persist_dir: str = Field(default="./chroma_db")
     vectordb_version: str | int = Field(default="v1")
 
 
+class QAGuidedSettings(BaseModel):
+    enabled: bool = Field(default=True)
+    engine: str = Field(default="langgraph")
+    suggestion_count: int = Field(default=3)
+    templates_path: str = Field(default="src/prompts/guided_templates.yaml")
+    gap_similarity_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
 class QASettings(BaseModel):
     monitor: QAMonitoringSettings = Field(default_factory=QAMonitoringSettings)
     cache: QACacheSettings = Field(default_factory=QACacheSettings)
+    guided: QAGuidedSettings = Field(default_factory=QAGuidedSettings)
 
 
 class Settings(BaseModel):
@@ -53,6 +64,12 @@ class Settings(BaseModel):
     embedding_device: str = Field(default="cpu")
     embedding_batch_size: int = Field(default=32)
     embedding_cache_dir: str = Field(default="./models")
+
+    # RAG feature toggles
+    enable_llm_classify: bool = Field(default=False, description="是否启用 LLM 分类 QA 对")
+    enable_topic_chunks: bool = Field(default=False, description="是否生成 topic chunk")
+    enable_step_chunks: bool = Field(default=False, description="是否生成 step chunk")
+    enable_metrics_chunks: bool = Field(default=False, description="是否生成 metrics chunk")
 
     # QA Monitor & Cache
     qa: QASettings = Field(default_factory=QASettings)

@@ -133,11 +133,10 @@ class ChromaStore:
 
         for doc in documents:
             metadata = doc["metadata"].copy()
-            # Convert lists to JSON strings (Chroma doesn't support list metadata natively)
-            if "page_type" in metadata and isinstance(metadata["page_type"], list):
-                metadata["page_type"] = json.dumps(metadata["page_type"])
-            if "entities" in metadata and isinstance(metadata["entities"], list):
-                metadata["entities"] = json.dumps(metadata["entities"])
+            # Convert any list metadata to JSON strings (Chroma不支持 list)
+            for key, val in list(metadata.items()):
+                if isinstance(val, list):
+                    metadata[key] = json.dumps(val, ensure_ascii=False)
             # Add indexed timestamp
             metadata["indexed_at"] = datetime.utcnow().isoformat() + "Z"
             # Store original JSON
@@ -249,6 +248,77 @@ class ChromaStore:
 
         return scored[:top_n]
 
+    def query_with_qa_ranking(
+        self,
+        query_text: str,
+        *,
+        project_name: Optional[str] = None,
+        where: Optional[Dict[str, Any]] = None,
+        n_results: int = 5,
+        category_filter: Optional[List[str]] = None,
+        prefer_qa_chunks: bool = True,
+        tau: float = 0.5,
+    ) -> List[Dict[str, Any]]:
+        """Enhanced query with QA-aware ranking.
+
+        Args:
+            query_text: User question
+            project_name: Filter by project
+            where: Additional metadata filters
+            n_results: Number of results to return
+            category_filter: Filter by categories (e.g., ["integration", "features"])
+            prefer_qa_chunks: Boost QA chunks in ranking
+            tau: Similarity threshold (default: 0.5)
+
+        Returns:
+            List of ranked results with metadata
+        """
+        # Build where clause
+        where_clause = self._build_where(project_name, where)
+
+        # Retrieve top_k candidates (2x n_results for reranking)
+        top_k = n_results * 2
+        raw_results = self.query(query_text, n_results=top_k, where=where_clause)
+
+        if not raw_results:
+            return []
+
+        # Rerank with QA-aware scoring
+        scored_results = []
+        for result in raw_results:
+            similarity = 1 - result["distance"] if result.get("distance") is not None else 0
+            meta = result.get("metadata", {}) or {}
+            score = similarity
+
+            # Boost QA chunks
+            if prefer_qa_chunks and meta.get("chunk_type") == "qa_pair":
+                score *= 1.2
+
+            # Boost matching categories
+            if category_filter:
+                result_category = meta.get("category_id")
+                if result_category in category_filter:
+                    score *= 1.3
+
+            # Boost high confidence
+            confidence = meta.get("confidence", 0.5)
+            score *= (0.8 + 0.4 * confidence)  # 0.8-1.2x multiplier
+
+            scored_results.append({
+                **result,
+                "similarity": similarity,
+                "score": score,
+            })
+
+        # Sort by score and return top N
+        scored_results.sort(key=lambda x: x["score"], reverse=True)
+
+        # Apply threshold
+        if scored_results and scored_results[0]["similarity"] < tau:
+            return []
+
+        return scored_results[:n_results]
+
     # ---- helpers ----
     def _build_where(self, project_name: Optional[str], where: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         if where:
@@ -328,29 +398,13 @@ class ChromaStore:
         "技术栈",
     ]
 
-    def _parse_page_types(self, metadata: Dict[str, Any]) -> List[str]:
-        """Normalize page_type metadata (may already be a JSON string)."""
-        pt = metadata.get("page_type")
-        if pt is None:
-            return []
-        if isinstance(pt, list):
-            return [str(x) for x in pt]
-        if isinstance(pt, str):
-            try:
-                loaded = json.loads(pt)
-                if isinstance(loaded, list):
-                    return [str(x) for x in loaded]
-            except Exception:
-                return [pt]
-        return [str(pt)]
-
     def _detail_bonus(self, metadata: Dict[str, Any], document: str) -> float:
         """Heuristic boost for detail slides and critical page types."""
         bonus = 0.0
         if str(metadata.get("level", "")).lower() == "slide":
             bonus += 0.02
 
-        page_types = self._parse_page_types(metadata)
+        page_types = self._parse_page_types(metadata.get("page_type"))
         for pt in page_types:
             lower = pt.lower()
             if any(keyword.lower() in lower for keyword in self.DETAIL_KEYWORDS):
@@ -362,65 +416,6 @@ class ChromaStore:
             bonus += 0.02
 
         return bonus
-
-    def _default_project_filter(self) -> Optional[Dict[str, Any]]:
-        """Best-effort default to the single project present; otherwise None."""
-        projects = self.list_projects()
-        if not projects:
-            return None
-        return {"project_name": projects[0]}
-
-    def query_with_guardrails(
-        self,
-        query_text: str,
-        top_k: int = 8,
-        top_n: int = 5,
-        tau: float = 0.5,
-        project_name: Optional[str] = None,
-        where: Optional[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
-        """
-        Query with default project filter, lightweight rerank, and similarity threshold.
-
-        Returns a list of results (with similarity/score). If top-1 < tau, returns a
-        single entry: {"message": "未找到相关内容", "top1_similarity": <value>}.
-        """
-        # Determine where filter (explicit where > project_name > default)
-        if where is None:
-            if project_name:
-                where = {"project_name": project_name}
-            else:
-                where = self._default_project_filter()
-
-        raw = self.query(query_text, n_results=top_k, where=where)
-        if not raw:
-            return [{"message": "未找到相关内容"}]
-
-        reranked: List[Dict[str, Any]] = []
-        for r in raw:
-            sim = 1 - r["distance"] if r.get("distance") is not None else 0
-            bonus = self._detail_bonus(r.get("metadata", {}), r.get("document", ""))
-            reranked.append(
-                {
-                    **r,
-                    "similarity": sim,
-                    "score": sim + bonus,
-                    "page_type": self._parse_page_types(r.get("metadata", {})),
-                }
-            )
-
-        reranked.sort(key=lambda x: x["score"], reverse=True)
-
-        top_similarity = reranked[0]["similarity"]
-        if top_similarity < tau:
-            return [
-                {
-                    "message": "未找到相关内容",
-                    "top1_similarity": round(top_similarity, 4),
-                }
-            ]
-
-        return reranked[:top_n]
 
     def delete_by_project(self, project_name: str) -> int:
         """Delete all documents for a project.

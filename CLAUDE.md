@@ -60,7 +60,7 @@ python -m src.scripts.vectordb_cli delete --project ChatBI
 ```bash
 python -m src.scripts.qa_cli -q ChatBI的核心功能是什么 -p ChatBI --config config/settings.yaml --top-k 8 --top-n 5 --tau 0.5
 ```
-- CLI 默认启用 `QAMonitor`：命中缓存会在答案前打印 `[cache hit/<level>]`，日志与精确缓存写 `logs/qa_sessions/qa_logs_YYYYMMDD.jsonl` / `qa_cache.jsonl`，语义缓存写入 Chroma collection `qa_cache`（TTL=7d，可用 `qa.cache.vectordb_version` 统一失效）。
+- CLI 默认启用 `QAMonitor`：命中缓存会在答案前打印 `[cache hit/<level>]`，日志与精确缓存写 `logs/qa_sessions/qa_logs_YYYYMMDD.jsonl` / `qa_cache.jsonl`；语义缓存已下线，命中仅依赖精确缓存（TTL=7d，可用 `qa.cache.vectordb_version` 统一失效）。
 
 - 输入：问题必填；可选 project 过滤。
 - 输出：answer + sources + status（success/no_context/error）。
@@ -218,7 +218,11 @@ config/settings.example.yaml  # template with placeholders
 ```
 CLI flag `--config` overrides the path; otherwise defaults to `config/settings.yaml`.
 
-**Mock Provider for Testing**: For offline testing or when LLM API is unavailable, set `llm_provider: mock` in settings.yaml. Mock mode returns the prompt as output without API calls, enabling pipeline testing without external dependencies.
+**Mock Provider for Testing**: For offline testing or when LLM API is unavailable, set `llm_provider: mock` in settings.yaml. 模式下 QA 生成走内置伪造问答（不依赖外部 LLM），保证 RAG 产物完整且可用于冒烟。
+
+**RAG Feature Toggles（成本/回滚控制）**：
+- `enable_llm_classify`：是否调用 LLM 分类 QA 对（默认 false）
+- `enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks`：是否生成对应 chunk（默认 false）
 
 ### Vector Database Configuration
 
@@ -285,16 +289,47 @@ embedding_cache_dir: ./models            # Model cache directory
 
 ## RAG Document Generation
 
-The pipeline includes a RAG preparation step (src/rag.py, integrated in pipeline.py:90-113) that converts page summaries and project profiles into embedding-ready documents for vector databases.
+### RAG v2 (QA-Pair Approach) - Current Implementation
 
-### Purpose
+The pipeline now uses a QA-pair-centric approach (src/rag/ package) that generates multiple chunk types per slide for enhanced retrieval quality.
 
-Transform structured summaries into semantic text documents optimized for:
-- Vector embedding and similarity search
-- Metadata-based filtering (project, slide, page type, confidence)
-- Traceability back to original JSON structures
+**Architecture**:
+```
+PageSummary → [QAGenerator] → 5-10 QA pairs
+                    ↓
+            [LLMClassifier] → Batch classify (8 categories)
+                    ↓
+            [ChunkGenerator] → Multiple chunk types:
+                    ├─ qa_pair (5-10 per slide)
+                    ├─ topic (1-3 if applicable)
+                    ├─ step (1-5 if applicable)
+                    ├─ metrics (0-2 if applicable)
+                    └─ overview (1 per project)
+```
 
-### Two-Level Approach
+**Key Features**:
+- **QA Pairs**: Natural question-answer pairs with alternative phrasings
+- **LLM Classification**: 8 categories (positioning, features, architecture, deployment, integration, cases, comparison, roadmap)
+- **Batch Processing**: 8-10 QA pairs classified per LLM call (80% cost reduction)
+- **Multi-Chunk Strategy**: Different chunk types for different query patterns
+- **Enhanced Metadata**: chunk_type, qa_question, alt_questions, answer, category_id, category_name
+
+**Chunk Types**:
+1. **qa_pair** (primary): Question + answer + alt_questions + keywords
+2. **topic** (optional): Thematic content blocks for long-form answers
+3. **step** (optional): Sequential/process steps
+4. **metrics** (optional): Performance/data metrics
+5. **overview** (project-level): Aggregated project summary
+
+**Token Cost**: ~2050 tokens per slide (QA generation: 1800, classification: 250)
+
+**See**: `src/rag/CLAUDE.md` for detailed documentation
+
+### RAG v1 (Legacy) - Deprecated
+
+The original single-chunk-per-slide approach is preserved in `src/rag/legacy.py` for reference.
+
+**Two-Level Approach** (legacy):
 
 **Slide-Level Documents** (detail):
 - One document per PageSummary

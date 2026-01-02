@@ -2,8 +2,7 @@
 
 Implements:
 - JSONL logging of each QA call (question, retrieval, LLM metrics, cache status).
-- Level 1 exact cache based on normalized question + project.
-- Optional level 2 semantic cache stored in a Chroma collection.
+- Two-level exact cache (in-memory index backed by JSONL on disk). Semantic cache has been removed.
 """
 
 from __future__ import annotations
@@ -15,15 +14,9 @@ import unicodedata
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import chromadb
-from chromadb.config import Settings as ChromaSettings
+from typing import Any, Dict, Optional
 
 from src.config import Settings
-from src.embeddings import M3EEmbedding
-
-
 ISO_FMT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 
@@ -34,18 +27,11 @@ def _utcnow() -> datetime:
 class QAMonitor:
     """QA monitoring and caching helper."""
 
-    def __init__(
-        self,
-        settings: Settings,
-        *,
-        embedding_model: Optional[M3EEmbedding] = None,
-        log_dir: Optional[Path] = None,
-    ) -> None:
+    def __init__(self, settings: Settings, *, log_dir: Optional[Path] = None) -> None:
         self.settings = settings
         self.qa_cfg = settings.qa
         self.monitor_cfg = self.qa_cfg.monitor
         self.cache_cfg = self.qa_cfg.cache
-        self.embedding_model = embedding_model
 
         self.log_dir = Path(log_dir or self.monitor_cfg.log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -57,11 +43,6 @@ class QAMonitor:
 
         # Load existing cache index (exact cache)
         self._load_cache_index()
-
-        # Semantic cache (Chroma) is optional
-        self.semantic_collection = None
-        if self.cache_cfg.cache_semantic_enabled and embedding_model is not None:
-            self.semantic_collection = self._init_semantic_collection()
 
     # ---------- public helpers ----------
     @staticmethod
@@ -83,13 +64,10 @@ class QAMonitor:
         question_norm: Optional[str] = None,
         project_name: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Check exact cache first, then semantic cache."""
+        """Check exact cache from in-memory index (no semantic lookup)."""
         record = self.cache_index.get(question_id)
         if record and not self._is_expired(record):
             return {**record, "cache_level": "exact", "cache_status": "hit"}
-
-        if self.cache_cfg.cache_semantic_enabled and self.semantic_collection:
-            return self._semantic_lookup(question_id, question_norm, project_name)
 
         return None
 
@@ -109,14 +87,6 @@ class QAMonitor:
         # Exact cache JSONL + in-memory index
         self._append_jsonl(self.cache_path, record)
         self.cache_index[record["question_id"]] = record
-
-        # Semantic cache into Chroma
-        if self.cache_cfg.cache_semantic_enabled and self.semantic_collection:
-            try:
-                self._semantic_upsert(record)
-            except Exception:
-                # Do not raise to caller; logging is best-effort here.
-                pass
 
     # ---------- monitoring ----------
     def log_event(self, event: Dict[str, Any]) -> None:
@@ -166,84 +136,3 @@ class QAMonitor:
         except Exception:
             # Corrupted cache should not block runtime
             self.cache_index = {}
-
-    # ---------- semantic cache helpers ----------
-    def _init_semantic_collection(self):
-        client = chromadb.PersistentClient(
-            path=str(Path(self.cache_cfg.cache_persist_dir)),
-            settings=ChromaSettings(anonymized_telemetry=False),
-        )
-        return client.get_or_create_collection(
-            name=self.cache_cfg.cache_collection,
-            metadata={"hnsw:space": "cosine"},
-        )
-
-    def _semantic_upsert(self, record: Dict[str, Any]) -> None:
-        if not self.embedding_model:
-            return
-        question_norm = record.get("question_norm") or ""
-        embedding = self.embedding_model.embed_single(question_norm)
-        cache_id = f"{record['question_id']}-semantic"
-        self.semantic_collection.upsert(
-            ids=[cache_id],
-            embeddings=[embedding.tolist()],
-            documents=[record.get("answer", "")],
-            metadatas=[
-                {
-                    "question_id": record["question_id"],
-                    "question_norm": question_norm,
-                    "project_name": record.get("project_name"),
-                    "created_at": record.get("created_at"),
-                    "vectordb_version": self.cache_cfg.vectordb_version,
-                }
-            ],
-        )
-
-    def _semantic_lookup(
-        self,
-        question_id: str,
-        question_norm: Optional[str],
-        project_name: Optional[str],
-    ) -> Optional[Dict[str, Any]]:
-        if not self.embedding_model:
-            return None
-
-        if not question_norm:
-            # semantic lookup requires normalized question; without it we skip
-            return None
-
-        embedding = self.embedding_model.embed_single(question_norm)
-        where = {"vectordb_version": str(self.cache_cfg.vectordb_version)}
-        if project_name:
-            where["project_name"] = project_name
-
-        results = self.semantic_collection.query(
-            query_embeddings=[embedding.tolist()],
-            n_results=1,
-            where=where,
-        )
-        if not results or not results.get("ids") or not results["ids"][0]:
-            return None
-
-        distance = results["distances"][0][0]
-        similarity = 1 - distance if distance is not None else 0
-        if similarity < self.cache_cfg.cache_semantic_threshold:
-            return None
-
-        meta = results["metadatas"][0][0] or {}
-        created_at = meta.get("created_at")
-        record = {
-            "question_id": meta.get("question_id"),
-            "question_norm": meta.get("question_norm"),
-            "project_name": meta.get("project_name"),
-            "answer": results["documents"][0][0],
-            "sources": [],
-            "created_at": created_at,
-            "cache_level": "semantic",
-            "cache_status": "hit",
-            "semantic_score": similarity,
-            "vectordb_version": meta.get("vectordb_version"),
-        }
-        if self._is_expired(record):
-            return None
-        return record

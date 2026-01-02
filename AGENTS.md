@@ -20,6 +20,7 @@ There is **no build/test runner committed yet**. Common repo checks:
 - `find docs -name "*.md" -maxdepth 1` — list key docs for review.
 - `ls -la ppts ppt_outputs` — verify inputs vs generated artifacts.
 - `python -m src.scripts.qa_cli -q "ChatBI的核心功能是什么" [-p <项目名>] --config config/settings.yaml` — 运行 RAG 问答 CLI（top_k/top_n/tau 可调）。
+- `python -m src.scripts.qa_gradio --config config/settings.yaml` — 启动 Gradio Web UI（引导式对话主入口）。
 
 When adding an automation pipeline (PPT→images→summaries), provide a single entrypoint, e.g. `python -m <module> --input ppts/... --out ppt_outputs/...`.
 
@@ -64,16 +65,19 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 | `src/renderer/AGENTS.md` | PPTX → PDF/PNG 渲染策略与对 `soffice`/`pdftoppm` 依赖。 |
 | `src/extractor/AGENTS.md` | 幻灯片文本抽取逻辑与数据对齐假设。 |
 | `src/summarizer/AGENTS.md` | LLM 客户端、单页总结与项目画像生成流程。 |
+| `src/prompts/AGENTS.md` | 统一管理问答/总结/画像的 Prompt 文本与加载器。 |
+| `src/rag/AGENTS.md` | QA 对生成、LLM 分类与多类型 chunk 生成逻辑（RAG v2）。 |
 | `src/embeddings/AGENTS.md` | M3E 向量模型加载、设备选择与批量编码策略。 |
 | `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤约定。 |
-| `src/qa/AGENTS.md` | QA 引擎、监控与缓存（JSONL + 语义缓存）职责与配置。 |
+| `src/qa/AGENTS.md` | QA 引擎、监控与缓存（JSONL 精确缓存，语义缓存已移除）职责与配置。 |
 | `src/scripts/AGENTS.md` | CLI 工具（qa_cli、vectordb_cli）参数与输出规范。 |
 | `tests/AGENTS.md` | 测试覆盖范围、跳过条件与烟囱测试说明。 |
 
 ## Code status (MVP skeleton)
 - Python pipeline lives in `src/` with CLI entry `python -m src --input ppts/... --output ppt_outputs/... --force`.
 - Core pieces: rendering (`renderer/libreoffice.py`), text extraction (`extractor/ppt_extractor.py`), LLM summarization (`summarizer/`), orchestration (`pipeline.py`), config (`config.py`), CLI (`__main__.py`), utilities (`utils.py`).
-- RAG 文档生成：`rag.py` + `pipeline.py` 将单页/画像转换为 `ppt_outputs/<ppt>/embeddings/rag_documents.json`，同时在 manifest 中记录 `rag_documents` 数量。
-- QA 问答：`src/qa/qa_engine.py` + `src/scripts/qa_cli.py`，调用 `ChromaStore.query_with_guardrails` + `LLMClient.generate`，默认 top_k=8 / top_n=5 / tau=0.5；可选监控/缓存中间层（`QAMonitor`）写 `logs/qa_sessions/*.jsonl`，提供精确/语义命中与 TTL/VDB 版本绑定。
+- RAG 文档生成（v2）：`src/rag/` 包实现 QA-pair 方案，包含 `qa_generator.py`（问答对生成）、`classifier.py`（LLM 批量分类）、`chunk_generator.py`（多类型 chunk 生成）；`pipeline.py` 调用生成 `ppt_outputs/<ppt>/embeddings/rag_documents.json`，包含 qa_pair/topic/step/metrics/overview 多种 chunk 类型。
+- RAG 开关：`config.Settings` 中的 `enable_llm_classify` / `enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks` 控制是否启用分类和可选 chunk（默认关闭，便于回滚/控成本）；refine 流程与主流程使用同一 RAG 生成逻辑。
+- QA 问答：`src/qa/qa_engine.py` + `src/scripts/qa_cli.py`，调用 `ChromaStore.query_with_guardrails` 或 `query_with_qa_ranking`（QA-aware 检索）+ `LLMClient.generate`，默认 top_k=8 / top_n=5 / tau=0.5；可选监控/缓存中间层（`QAMonitor`）写 `logs/qa_sessions/*.jsonl`，仅提供精确命中（TTL/VDB 版本绑定），语义缓存已下线。
 - Tests under `tests/` include model sanity and an e2e smoke that requires `soffice` + `pdftoppm` and uses `LLM_PROVIDER=mock`.
 - Dependencies listed in `requirements.txt`; config template in `config/settings.example.yaml`; usage in `README.md`.
