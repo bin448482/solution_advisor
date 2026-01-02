@@ -285,16 +285,47 @@ embedding_cache_dir: ./models            # Model cache directory
 
 ## RAG Document Generation
 
-The pipeline includes a RAG preparation step (src/rag.py, integrated in pipeline.py:90-113) that converts page summaries and project profiles into embedding-ready documents for vector databases.
+### RAG v2 (QA-Pair Approach) - Current Implementation
 
-### Purpose
+The pipeline now uses a QA-pair-centric approach (src/rag/ package) that generates multiple chunk types per slide for enhanced retrieval quality.
 
-Transform structured summaries into semantic text documents optimized for:
-- Vector embedding and similarity search
-- Metadata-based filtering (project, slide, page type, confidence)
-- Traceability back to original JSON structures
+**Architecture**:
+```
+PageSummary → [QAGenerator] → 5-10 QA pairs
+                    ↓
+            [LLMClassifier] → Batch classify (8 categories)
+                    ↓
+            [ChunkGenerator] → Multiple chunk types:
+                    ├─ qa_pair (5-10 per slide)
+                    ├─ topic (1-3 if applicable)
+                    ├─ step (1-5 if applicable)
+                    ├─ metrics (0-2 if applicable)
+                    └─ overview (1 per project)
+```
 
-### Two-Level Approach
+**Key Features**:
+- **QA Pairs**: Natural question-answer pairs with alternative phrasings
+- **LLM Classification**: 8 categories (positioning, features, architecture, deployment, integration, cases, comparison, roadmap)
+- **Batch Processing**: 8-10 QA pairs classified per LLM call (80% cost reduction)
+- **Multi-Chunk Strategy**: Different chunk types for different query patterns
+- **Enhanced Metadata**: chunk_type, qa_question, alt_questions, answer, category_id, category_name
+
+**Chunk Types**:
+1. **qa_pair** (primary): Question + answer + alt_questions + keywords
+2. **topic** (optional): Thematic content blocks for long-form answers
+3. **step** (optional): Sequential/process steps
+4. **metrics** (optional): Performance/data metrics
+5. **overview** (project-level): Aggregated project summary
+
+**Token Cost**: ~2050 tokens per slide (QA generation: 1800, classification: 250)
+
+**See**: `src/rag/CLAUDE.md` for detailed documentation
+
+### RAG v1 (Legacy) - Deprecated
+
+The original single-chunk-per-slide approach is preserved in `src/rag/legacy.py` for reference.
+
+**Two-Level Approach** (legacy):
 
 **Slide-Level Documents** (detail):
 - One document per PageSummary

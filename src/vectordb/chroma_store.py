@@ -249,6 +249,77 @@ class ChromaStore:
 
         return scored[:top_n]
 
+    def query_with_qa_ranking(
+        self,
+        query_text: str,
+        *,
+        project_name: Optional[str] = None,
+        where: Optional[Dict[str, Any]] = None,
+        n_results: int = 5,
+        category_filter: Optional[List[str]] = None,
+        prefer_qa_chunks: bool = True,
+        tau: float = 0.5,
+    ) -> List[Dict[str, Any]]:
+        """Enhanced query with QA-aware ranking.
+
+        Args:
+            query_text: User question
+            project_name: Filter by project
+            where: Additional metadata filters
+            n_results: Number of results to return
+            category_filter: Filter by categories (e.g., ["integration", "features"])
+            prefer_qa_chunks: Boost QA chunks in ranking
+            tau: Similarity threshold (default: 0.5)
+
+        Returns:
+            List of ranked results with metadata
+        """
+        # Build where clause
+        where_clause = self._build_where(project_name, where)
+
+        # Retrieve top_k candidates (2x n_results for reranking)
+        top_k = n_results * 2
+        raw_results = self.query(query_text, n_results=top_k, where=where_clause)
+
+        if not raw_results:
+            return []
+
+        # Rerank with QA-aware scoring
+        scored_results = []
+        for result in raw_results:
+            similarity = 1 - result["distance"] if result.get("distance") is not None else 0
+            meta = result.get("metadata", {}) or {}
+            score = similarity
+
+            # Boost QA chunks
+            if prefer_qa_chunks and meta.get("chunk_type") == "qa_pair":
+                score *= 1.2
+
+            # Boost matching categories
+            if category_filter:
+                result_category = meta.get("category_id")
+                if result_category in category_filter:
+                    score *= 1.3
+
+            # Boost high confidence
+            confidence = meta.get("confidence", 0.5)
+            score *= (0.8 + 0.4 * confidence)  # 0.8-1.2x multiplier
+
+            scored_results.append({
+                **result,
+                "similarity": similarity,
+                "score": score,
+            })
+
+        # Sort by score and return top N
+        scored_results.sort(key=lambda x: x["score"], reverse=True)
+
+        # Apply threshold
+        if scored_results and scored_results[0]["similarity"] < tau:
+            return []
+
+        return scored_results[:n_results]
+
     # ---- helpers ----
     def _build_where(self, project_name: Optional[str], where: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         if where:
