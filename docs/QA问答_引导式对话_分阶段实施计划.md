@@ -424,6 +424,7 @@ def _filter_duplicates(self, suggestions, state):
 | `config/settings.example.yaml` | 1 | 扩展 |
 | `src/qa/dialogue_state.py` | 2 | 新增 |
 | `src/prompts/guided_llm.txt` | 3 | 新增 |
+| `src/scripts/qa_gradio.py` | 1 | 新增 |
 | `tests/test_dialogue_orchestrator.py` | 1 | 新增 |
 
 ---
@@ -438,71 +439,27 @@ def _filter_duplicates(self, suggestions, state):
 
 ---
 
-## 交互式 CLI 设计（贯穿三阶段）
+## 交互式渠道调整：主推 Gradio Web UI（CLI 作为备份）
 
-### CLI 主循环
-```python
-# src/scripts/qa_cli.py 扩展
+- 决策：主交互改为 **Gradio Web UI**，CLI 循环保留用于开发/排障。
+- 入口：新增 `src/scripts/qa_gradio.py`（或 `python -m src.scripts.qa_gradio`），参数沿用 CLI：`--config`、`--project`、`--guided-engine`。
+- 布局建议：左侧文本输入 + “发送”按钮；右侧对话列表（问题、答案、来源）；下方卡片/按钮显示澄清选项与“下一步”追问；顶部下拉用于选择项目/阶段/模块。
+- 事件流：
+  1. 用户输入问题 → Orchestrator 执行 → 展示答案和来源；
+  2. `clarify` 分支返回槽位候选时，渲染复选/单选组件；选定后自动写入 `state.slots` 并重试；
+  3. `follow_up`/`gap_prompt` 生成的建议以按钮呈现，点击即触发下一轮提问；
+  4. 失败/降级时在 UI 侧显示“已降级到模板/默认建议”标记。
+- 状态管理：前端 Session 存放 `state_id`，后端维护 `DialogueState`；关闭 Tab 即结束会话。
+- 可选增强：一键复制答案、导出对话 JSON/Markdown。
 
-def guided_loop(orchestrator, initial_question=None, project=None):
-    """交互式引导对话主循环"""
-    state = DialogueState()
-    if project:
-        state.slots["project_name"] = project
+### Gradio 任务分解（插入到三阶段内）
+- 阶段 1：提供最小可用 Gradio 界面（单输入框 + 回答 + 建议按钮）；CLI 示例改为“备用”。
+- 阶段 2：在 Gradio 上承载槽位澄清/多选；显示当前已填槽位区域；支持项目下拉。
+- 阶段 3：UI 增加“降级提示”“重复问题提示”徽标；增加“导出对话”按钮；建议区做冷却标记。
 
-    question = initial_question
-    while True:
-        # 1. 首轮或无问题时，提示输入
-        if not question:
-            question = input("\n🔍 请输入问题（输入 q 退出）: ").strip()
-            if question.lower() in ("q", "quit", "exit"):
-                break
-
-        # 2. 槽位澄清（阶段 2）
-        clarify = orchestrator.clarify_if_needed(question, state)
-        if clarify["needs_clarify"]:
-            print(f"\n💬 {clarify['clarify_text']}")
-            for i, opt in enumerate(clarify["options"], 1):
-                print(f"  {i}. {opt}")
-            choice = input("请选择（序号/名称/跳过按回车）: ").strip()
-            if choice:
-                state = orchestrator.apply_slot_selection(clarify["slot_key"], choice, state)
-
-        # 3. 执行问答
-        result = orchestrator.answer_with_guidance(question, state)
-
-        # 4. 输出答案
-        print(f"\n📝 {result['answer']}")
-        if result.get("sources"):
-            print(f"   来源: {', '.join(s['project'] + ':' + str(s['slide_no']) for s in result['sources'][:3])}")
-
-        # 5. 显示建议选项
-        suggestions = result.get("suggestions", [])
-        if suggestions:
-            print(f"\n💡 您可能还想问：")
-            for i, s in enumerate(suggestions, 1):
-                print(f"  {i}. {s}")
-            print(f"  0. 输入新问题")
-
-            choice = input("请选择（序号）: ").strip()
-            if choice.isdigit() and 1 <= int(choice) <= len(suggestions):
-                question = suggestions[int(choice) - 1]
-                state.history.append({"q": question, "a": result["answer"][:100]})
-                continue
-
-        # 6. 重置问题，等待新输入
-        question = None
-        state.history.append({"q": question, "a": result.get("answer", "")[:100]})
-
-# CLI 入口
-if args.guided:
-    guided_loop(orchestrator, args.question, args.project)
-```
-
-### 退出条件
-- 用户输入 `q`/`quit`/`exit`
-- 连续 3 轮无结果
-- 用户选择 `0` 后不输入新问题
+### 退出与回退策略
+- Web 端关闭会话即结束；无需专门“退出”命令。
+- 当 `guided-engine` 未安装（如缺 langgraph/langchain），Gradio 页面展示报错卡片并提示安装命令；仍可选择“仅单轮 QA”模式回退。
 
 ---
 

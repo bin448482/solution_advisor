@@ -10,6 +10,7 @@
 
 ## 2. 框架选型与设计原则
 - **框架选型**：默认采用 LangChain Agents + LangGraph（LCEL）作为引导式对话的编排层。理由：状态化图式编排、可中断/恢复、支持工具流与人类介入，社区活跃且 API 稳定；保持 MIT 许可。AutoGen 处于迁移期、LlamaIndex AgentRunner 已弃用。
+- **交互形态**：主通道改为 **Gradio Web UI**（按钮/下拉/标签式追问），CLI 仅作为备份与排障示例。
 - **暂不提供 legacy 分支**：当前代码仅实现 LangGraph 路径；如需纯函数/legacy 回退，后续补充并通过 `qa.guided.engine=legacy` 启用，现阶段配置仅接受 `langgraph`。
 - 最小侵入：不重写 QAEngine 流程，新增 LangGraph 图编排层包装原有接口。
 - 可配置：槽位、引导文案、推荐问题模板通过 YAML/JSON 配置。
@@ -36,6 +37,13 @@ QAEngine.answer（原） + ChromaStore + LLM
 3) `retrieve_answer`：调用 `QAEngine.answer`；若命中低于阈值或结果为空，进入 `gap_prompt`。
 4) `gap_prompt`：给出 2–3 个引导问题/选项，引导用户补充；若仍失败，提供“提交补充资料”与“查看常见问题”。
 5) `follow_up`：每次回答后推送 2–3 条“下一步”引导（可点选生成新问题）。
+
+## 4.1 Gradio Web UI 设计（主交互通道）
+- 入口：`python -m src.scripts.qa_gradio --config config/settings.yaml --project <项目>`，与 CLI 参数保持一致（额外支持 `--host`、`--port`）。
+- 布局：左侧输入框 + “发送”按钮；右侧对话流（问题/答案/来源）；底部区域显示澄清槽位选择（单选/多选组件）；上方下拉切换项目/阶段/模块；右上角按钮用于导出对话。
+- 事件流：输入问题 → Orchestrator → 答案 + 来源；`clarify` 返回槽位候选时渲染多选并自动重试；`follow_up/gap_prompt` 以按钮形式呈现，点击即触发新问题；降级/重复提示以 Badge 标注。
+- 状态：Session 保存 `state_id`，后端维护 `DialogueState`；关闭页面即结束会话，不做持久化（可选导出 JSON/Markdown）。
+- 降级可见性：当 LLM 失败回落模板或命中不足进入 gap 分支时，在 UI 显示“已降级/低置信”标签，便于体验评估。
 
 ## 5. 槽位与模板（配置驱动）
 - 槽位示例（默认启用）：`project_name`、`phase`（立项/实施/收尾）、`module`（范围/里程碑/风险/资源/预算/联系人）、`timeframe`。
@@ -72,6 +80,7 @@ QAEngine.answer（原） + ChromaStore + LLM
   - `qa.guided.engine`（当前仅接受 `langgraph`；未来支持 `legacy`）
   - `qa.guided.slots`、`qa.guided.templates_path`、`qa.guided.suggestion_count`、`qa.guided.gap_similarity_threshold`。
 - 数据：新增模板文件 `src/prompts/guided_templates.yaml`（槽位、推荐问题、文案片段）。
+- Web 端：新增 `src/scripts/qa_gradio.py`，提供 Gradio UI（输入框+按钮+澄清多选+追问按钮+导出对话）。
 - 监控：在现有 QA 日志中新增 `dialogue_phase`、`slots_filled`、`suggestions_shown`、`path_taken`；新增 `graph_node`、`graph_attempt`、`repeat_blocked_count`、`fallback_rate`、`unanswerable_detected`。
 - 依赖与安装：`pip install langgraph>=0.1.0 langchain>=0.3`；若运行环境无法安装 LangGraph，CLI 需提示“缺少 langgraph，暂不支持 legacy 回退”并退出（待实现 legacy 时再开放降级）。
 - 检索元数据要求：`QAEngine.answer`/`ChromaStore.query_with_guardrails` 需返回 `page_type`、`level`、`project`、`slide_no`，用于 follow-up 生成与过滤。
@@ -121,7 +130,7 @@ QAEngine.answer（原） + ChromaStore + LLM
 1) **PoC（1 天）**：CLI 版引导模式，固定槽位与文案；命中失败时返回预置三条追问；日志记录新增字段。
 2) **Config 化（1 天）**：引入 `guided_templates.yaml`，支持按项目/阶段选择模板；`settings.yaml` 增加开关与阈值。
 3) **智能推荐（1–2 天）**：依据最近命中文档的 `module` 元数据，动态推荐“下一步”问题；低置信时自动切换到 gap 分支。
-4) **多通道（可选）**：如果后续接入 Web/IM，可复用 Orchestrator，CLI 仅作为示例客户端。
+4) **多通道**：Web 端优先（Gradio 已纳入本阶段交付）；CLI 作为备份；若后续接入 IM/Portal，可直接复用同一 Orchestrator。
 
 ## 9. 测试与验证
 - 单测：`tests/test_dialogue_orchestrator.py` 覆盖槽位合并、模板选择、无结果分支。
