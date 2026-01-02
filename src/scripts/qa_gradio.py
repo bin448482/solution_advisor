@@ -74,7 +74,15 @@ def build_app(orchestrator: DialogueOrchestrator, default_project: str | None = 
 
         suggestions = result.get("suggestions", [])
         chat_history = chat_history + [(message, answer)]
-        return chat_history, gr.update(choices=suggestions, value=None), st
+
+        # 若需要澄清项目，更新项目下拉候选
+        if result.get("dialogue_phase") == "clarify":
+            slot_candidates = result.get("slot_candidates", {}).get("project_name", [])
+            project_update = gr.update(choices=slot_candidates, value=None, interactive=True)
+        else:
+            project_update = gr.update()
+
+        return chat_history, gr.update(choices=suggestions, value=None), project_update, st
 
     def use_suggestion(suggestion: str):
         return gr.update(value=suggestion)
@@ -82,7 +90,13 @@ def build_app(orchestrator: DialogueOrchestrator, default_project: str | None = 
     with gr.Blocks(title="Guided QA") as demo:
         gr.Markdown("### 引导式 QA（Gradio）")
         with gr.Row():
-            project_dd = gr.Textbox(label="项目过滤（可选）", placeholder="请输入项目名称", value=default_project or "")
+            available_projects = orchestrator._list_available_projects()
+            project_dd = gr.Dropdown(
+                label="项目过滤（可选）",
+                choices=available_projects,
+                value=default_project or None,
+                allow_custom_value=True,
+            )
         chatbot = gr.Chatbot(label="对话", height=400)
         suggestions = gr.Radio(label="下一步追问", choices=[], interactive=True)
         msg = gr.Textbox(label="问题", placeholder="请输入问题")
@@ -92,13 +106,13 @@ def build_app(orchestrator: DialogueOrchestrator, default_project: str | None = 
         send.click(
             chat_fn,
             inputs=[msg, chatbot, project_dd, state],
-            outputs=[chatbot, suggestions, state],
+            outputs=[chatbot, suggestions, project_dd, state],
         ).then(lambda: gr.update(value=""), None, [msg])
 
         suggestions.change(use_suggestion, inputs=[suggestions], outputs=[msg])
         clear.click(
-            lambda: ([], gr.update(choices=[], value=None), DialogueState()),
-            outputs=[chatbot, suggestions, state],
+            lambda: ([], gr.update(choices=[], value=None), gr.update(), DialogueState()),
+            outputs=[chatbot, suggestions, project_dd, state],
         )
 
     return demo

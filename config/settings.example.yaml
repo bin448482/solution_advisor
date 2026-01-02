@@ -43,3 +43,4 @@ qa:
     suggestion_count: 3
     templates_path: src/prompts/guided_templates.yaml
     gap_similarity_threshold: 0.5
+    llm_prompt_path: src/prompts/guided_llm.txt

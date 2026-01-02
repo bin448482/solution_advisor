@@ -16,3 +16,15 @@ follow_ups_by_module:
   default:
     - "还有其他问题吗？"
     - "需要更详细的说明吗？"
+
+# 槽位澄清模板（阶段 2）
+slot_schema:
+  project_name:
+    prompt: "请问您想了解哪个项目？"
+    required: false
+  phase:
+    prompt: "您关注哪个阶段？"
+    options: ["立项", "实施", "收尾"]
+  module:
+    prompt: "您关注哪个方面？"
+    options: ["功能", "架构", "部署", "案例", "风险"]

@@ -19,7 +19,8 @@ from src.vectordb import ChromaStore
 @click.option("--top-k", default=8, show_default=True, help="检索召回数量")
 @click.option("--top-n", default=5, show_default=True, help="重排后保留的结果数")
 @click.option("--tau", default=0.5, type=float, show_default=True, help="相似度阈值（低于此视为无相关内容）")
-def cli(question: str, project: str | None, config: str, top_k: int, top_n: int, tau: float):
+@click.option("--guided", is_flag=True, help="启用引导式多轮逻辑（开发/排障用）")
+def cli(question: str, project: str | None, config: str, top_k: int, top_n: int, tau: float, guided: bool):
     """基于已嵌入的项目文档进行问答。"""
 
     try:
@@ -50,17 +51,42 @@ def cli(question: str, project: str | None, config: str, top_k: int, top_n: int,
     qa_engine = QAEngine(store=store, llm_client=llm_client, monitor=monitor)
 
     # 执行问答
-    result = qa_engine.answer(
-        question=question,
-        project_name=project,
-        top_k=top_k,
-        top_n=top_n,
-        tau=tau,
-    )
+    if guided:
+        from src.prompts import get_guided_templates
+        from src.qa.dialogue_orchestrator import DialogueOrchestrator, DialogueState
+
+        templates = get_guided_templates(getattr(settings.qa.guided, "templates_path", None))
+        orchestrator = DialogueOrchestrator(
+            qa_engine=qa_engine,
+            templates=templates,
+            llm_client=llm_client,
+            gap_threshold=getattr(settings.qa.guided, "gap_similarity_threshold", 0.5),
+        )
+        state = DialogueState()
+        if project:
+            state.slots["project_name"] = project
+        result = orchestrator.answer_with_guidance(question=question, state=state)
+    else:
+        result = qa_engine.answer(
+            question=question,
+            project_name=project,
+            top_k=top_k,
+            top_n=top_n,
+            tau=tau,
+        )
 
     click.echo(f"\n问题: {question}\n")
 
     status = result.get("status", "unknown")
+    if status == "clarify":
+        slots = result.get("slot_candidates", {}).get("project_name", [])
+        click.echo(result.get("answer", "请补充项目信息"))
+        if slots:
+            click.echo("候选项目：")
+            for idx, name in enumerate(slots, 1):
+                click.echo(f"{idx}. {name}")
+        sys.exit(0)
+
     if status == "no_context":
         click.echo("未找到相关内容，无法回答该问题。")
         sys.exit(0)
@@ -90,6 +116,11 @@ def cli(question: str, project: str | None, config: str, top_k: int, top_n: int,
                 f"  - {src.get('project', 'N/A')} 第{src.get('slide_no', 'N/A')}页"
                 f" (级别: {src.get('level', 'N/A')}){sim_str}"
             )
+
+    if result.get("suggestions"):
+        click.echo("\n推荐追问：")
+        for idx, sug in enumerate(result["suggestions"], 1):
+            click.echo(f"{idx}. {sug}")
 
     click.echo(f"\n状态: {status}")
 
