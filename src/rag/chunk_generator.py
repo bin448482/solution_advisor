@@ -109,16 +109,16 @@ class ChunkGenerator:
 
         # Metadata
         page_types = _classify_page_types(summary)
-            metadata = ChunkMetadata(
-                project_name=project_name,
-                slide_no=summary.slide_no,
-                chunk_type="topic",
-                level="slide",
-                confidence=summary.confidence,
-                page_type=page_types,
-                entities=summary.entities,
-                source_slide_refs=[summary.slide_no],
-            )
+        metadata = ChunkMetadata(
+            project_name=project_name,
+            slide_no=summary.slide_no,
+            chunk_type="topic",
+            level="slide",
+            confidence=summary.confidence,
+            page_type=page_types,
+            entities=summary.entities,
+            source_slide_refs=[summary.slide_no],
+        )
 
         chunks.append(ChunkDocument(
             id=chunk_id,
@@ -221,16 +221,16 @@ class ChunkGenerator:
 
         # Metadata
         page_types = _classify_page_types(summary)
-            metadata = ChunkMetadata(
-                project_name=project_name,
-                slide_no=summary.slide_no,
-                chunk_type="metrics",
-                level="slide",
-                confidence=summary.confidence,
-                page_type=page_types,
-                entities=summary.entities,
-                source_slide_refs=[summary.slide_no],
-            )
+        metadata = ChunkMetadata(
+            project_name=project_name,
+            slide_no=summary.slide_no,
+            chunk_type="metrics",
+            level="slide",
+            confidence=summary.confidence,
+            page_type=page_types,
+            entities=summary.entities,
+            source_slide_refs=[summary.slide_no],
+        )
 
         chunks.append(ChunkDocument(
             id=chunk_id,

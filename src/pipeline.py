@@ -17,7 +17,8 @@ from src.models import (
     VectorDBMetrics,
 )
 from src.pipeline_runner import PipelineContext, PipelineRunner, Stage, StageResult
-from src.rag import clean_summary_for_embedding, prepare_project_embedding, prepare_slide_embedding
+# NOTE: Legacy RAG v1 helpers (prepare_* / clean_summary_for_embedding) are intentionally
+# not imported/used anymore. RAG v2 uses QA 对 + ChunkGenerator in stages below.
 from src.renderer import LibreOfficeRenderer, RenderError
 from src.summarizer import LLMClient, PageSummarizer, ProfileGenerator
 from src.utils import compute_sha256, ensure_dir, load_json, save_json

@@ -12,17 +12,13 @@ Main modules:
 - legacy: Original single-chunk RAG preparation (deprecated)
 """
 
-# Export main functions and models for convenience
-from src.rag.legacy import (
-    prepare_slide_embedding,
-    prepare_project_embedding,
-    clean_summary_for_embedding,
-    _classify_page_types,
-)
+# Legacy v1 helpers are kept for reference but intentionally NOT re-exported
+# to avoid误用；RAG v2 (QA 对 + ChunkGenerator)应作为唯一入口。
+# from src.rag.legacy import (
+#     prepare_slide_embedding,
+#     prepare_project_embedding,
+#     clean_summary_for_embedding,
+#     _classify_page_types,
+# )
 
-__all__ = [
-    "prepare_slide_embedding",
-    "prepare_project_embedding",
-    "clean_summary_for_embedding",
-    "_classify_page_types",
-]
+__all__: list[str] = []  # explicit empty export to signal v2-only usage
