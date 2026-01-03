@@ -24,14 +24,15 @@ RAG v2 包实现基于 QA 对的多类型 chunk 生成策略，用于优化向�
 
 ### chunk_generator.py
 - **入口**：
-  - `generate_qa_chunks(qa_pairs, project_name) -> List[ChunkDocument]`
-  - `generate_topic_chunks(summary, project_name) -> List[ChunkDocument]`
-  - `generate_step_chunks(summary, project_name) -> List[ChunkDocument]`
-  - `generate_metrics_chunks(summary, project_name) -> List[ChunkDocument]`
-  - `generate_overview_chunk(profile, project_name) -> ChunkDocument`
-  - `decide_chunk_types(summary) -> List[str]`（决策逻辑）
-- **功能**：生成多种类型的 chunk（qa_pair/topic/step/metrics/overview）
-- **元数据**：包含 `source_slide_refs`，便于追溯；多值字段入库前统一 JSON 字符串化（在 `ChromaStore`）
+  - `generate_qa_chunks(qa_pairs, project_name)`
+  - `generate_category_summary_chunks(qa_pairs, project_name, max_examples=5)`
+  - `generate_topic_chunks(summary, project_name)`（legacy，可关闭）
+  - `generate_step_chunks(summary, project_name)`（legacy，可关闭）
+  - `generate_metrics_chunks(summary, project_name)`
+  - `generate_overview_chunk(profile, project_name)`
+  - `decide_chunk_types(summary) -> List[str]`
+- **功能**：生成多种类型的 chunk（qa_pair/category_summary/metrics/overview，topic/step 仅兼容）
+- **元数据**：统一 `source_file`/`source_files` + `source_slide_refs` 追溯；`original_json` 精简为来源信息
 
 ### legacy.py
 - **原有逻辑**：单 chunk 生成（已弃用，保留用于参考）

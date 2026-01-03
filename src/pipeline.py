@@ -241,6 +241,11 @@ class RAGPrepStage:
                 metrics_chunks = chunk_generator.generate_metrics_chunks(summary, project_name)
                 all_chunks.extend([c.model_dump() for c in metrics_chunks])
 
+        # Category summary chunks (project-level aggregation)
+        if ctx.settings.enable_category_summary_chunks:
+            category_chunks = chunk_generator.generate_category_summary_chunks(all_qa_pairs, project_name)
+            all_chunks.extend([c.model_dump() for c in category_chunks])
+
         # Step 4: Project overview chunk
         overview_chunk = chunk_generator.generate_overview_chunk(profile, project_name)
         all_chunks.append(overview_chunk.model_dump())
@@ -518,6 +523,9 @@ class PPTPipeline:
                     rag_docs.extend([c.model_dump() for c in chunk_generator.generate_step_chunks(summary, project_name)])
                 if "metrics" in chunk_types and self.settings.enable_metrics_chunks:
                     rag_docs.extend([c.model_dump() for c in chunk_generator.generate_metrics_chunks(summary, project_name)])
+
+            if self.settings.enable_category_summary_chunks:
+                rag_docs.extend([c.model_dump() for c in chunk_generator.generate_category_summary_chunks(all_qa_pairs, project_name)])
 
             overview_chunk = chunk_generator.generate_overview_chunk(profile, project_name)
             rag_docs.append(overview_chunk.model_dump())
