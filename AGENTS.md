@@ -69,6 +69,7 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 | `src/embeddings/AGENTS.md` | M3E 向量模型加载、设备选择与批量编码策略。 |
 | `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤约定。 |
 | `src/qa/AGENTS.md` | QA 引擎、监控与缓存（JSONL 精确缓存，语义缓存已移除）职责与配置。 |
+| `src/ui/AGENTS.md` | Streamlit Web UI，项目选择、问答交互、引用展示与反馈收集。 |
 | `src/scripts/AGENTS.md` | CLI 工具（qa_cli、vectordb_cli）参数与输出规范。 |
 | `tests/AGENTS.md` | 测试覆盖范围、跳过条件与烟囱测试说明。 |
 
@@ -78,5 +79,6 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 - RAG 文档生成（v2）：`src/rag/` 包实现 QA-pair 方案，包含 `qa_generator.py`（问答对生成）、`classifier.py`（LLM 批量分类）、`chunk_generator.py`（多类型 chunk 生成）；`pipeline.py` 调用生成 `ppt_outputs/<ppt>/embeddings/rag_documents.json`，包含 qa_pair/topic/step/metrics/overview 多种 chunk 类型。
 - RAG 开关：`config.Settings` 中的 `enable_llm_classify` / `enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks` 控制是否启用分类和可选 chunk（默认关闭，便于回滚/控成本）；refine 流程与主流程使用同一 RAG 生成逻辑。
 - QA 问答：`src/qa/qa_engine.py` + `src/scripts/qa_cli.py`，调用 `ChromaStore.query_with_guardrails` 或 `query_with_qa_ranking`（QA-aware 检索）+ `LLMClient.generate`，默认 top_k=8 / top_n=5 / tau=0.5；可选监控/缓存中间层（`QAMonitor`）写 `logs/qa_sessions/*.jsonl`，仅提供精确命中（TTL/VDB 版本绑定），语义缓存已下线。
+- Web UI：`src/ui/streamlit_app.py` 提供 Streamlit 界面，支持项目选择、参数配置、问答交互、引用展示与反馈收集；运行 `streamlit run src/ui/streamlit_app.py`；MVP 阶段采用同步模式（无流式输出）。
 - Tests under `tests/` include model sanity and an e2e smoke that requires `soffice` + `pdftoppm` and uses `LLM_PROVIDER=mock`.
 - Dependencies listed in `requirements.txt`; config template in `config/settings.example.yaml`; usage in `README.md`.
