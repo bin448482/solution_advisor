@@ -65,6 +65,12 @@ class Settings(BaseModel):
     embedding_batch_size: int = Field(default=32)
     embedding_cache_dir: str = Field(default="./models")
 
+    # RAG generation mode
+    auto_ragprep_enabled: bool = Field(
+        default=False,
+        description="是否启用自动 RAG 文档生成；默认关闭，改为人工生成 rag_documents.json（见 docs/generate_rag_documents.md）",
+    )
+
     # RAG feature toggles
     enable_llm_classify: bool = Field(default=False, description="是否启用 LLM 分类 QA 对")
     enable_topic_chunks: bool = Field(default=False, description="是否生成 topic chunk")

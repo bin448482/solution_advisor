@@ -27,5 +27,12 @@ def test_pipeline_smoke(tmp_path):
     assert manifest["page_count"] >= 1
     assert (output_dir / "slides").exists()
     assert (output_dir / "page_summaries").exists()
-    assert (output_dir / "embeddings" / "rag_documents.json").exists()
-    assert manifest["rag_documents"] >= 1
+    # 默认关闭自动 RAG 生成，rag_documents.json 需手工生成；此处仅验证前置阶段成功
+    rag_path = output_dir / "embeddings" / "rag_documents.json"
+    if rag_path.exists():
+        import json
+
+        rag_docs = json.loads(rag_path.read_text(encoding="utf-8"))
+        assert manifest["rag_documents"] == len(rag_docs)
+    else:
+        assert manifest["rag_documents"] == 0
