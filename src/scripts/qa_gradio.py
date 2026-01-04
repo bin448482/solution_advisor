@@ -140,7 +140,20 @@ def main():
 
     _, orchestrator = _init_engine(settings)
     demo = build_app(orchestrator, default_project=args.project)
-    demo.launch(server_name=args.host, server_port=args.port, share=False)
+
+    # 兼容性补丁：跳过 API schema 生成，避免 gradio_client.utils.json_schema_to_python_type
+    # 在处理自定义 State 时出现 TypeError（bool 不是可迭代）。
+    from types import MethodType
+
+    demo.get_api_info = MethodType(lambda self: {}, demo)
+
+    # NOTE: show_api=False 同样关闭前端的 API 展示，进一步规避 schema 推断。
+    demo.launch(
+        server_name=args.host,
+        server_port=args.port,
+        share=False,
+        show_api=False,
+    )
 
 
 if __name__ == "__main__":
