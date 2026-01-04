@@ -168,12 +168,22 @@ class RAGPrepStage:
         rag_path = ctx.output_dir / "embeddings" / "rag_documents.json"
         ensure_dir(rag_path.parent)
 
+        # Reuse manually generated rag_documents.json if present
         if rag_path.exists() and not ctx.force_interpret:
             rag_docs = load_json(rag_path)
             ctx.artifacts["rag_docs"] = rag_docs
-            ctx.log(f"[ragprep] Reuse {len(rag_docs)} rag documents")
+            ctx.log(f"[ragprep] Reuse {len(rag_docs)} rag documents (manual)")
             return StageResult(success_count=len(rag_docs), notes="reuse")
 
+        # Manual-first mode: automatic generation is disabled by default.
+        if not ctx.settings.auto_ragprep_enabled:
+            ctx.log(
+                "[ragprep] Auto generation disabled. Please generate embeddings/rag_documents.json manually per "
+                "docs/generate_rag_documents.md (e.g., using Claude Code / Codex), then rerun to load/insert."
+            )
+            return StageResult(success_count=0, failure_count=0, notes="manual_ragprep_required")
+
+        # -------- Legacy automatic RAG prep (kept for future reuse) --------
         # Import new RAG modules
         from src.rag.qa_generator import QAGenerator
         from src.rag.chunk_generator import ChunkGenerator
@@ -271,7 +281,11 @@ class VectorSinkStage:
 
         rag_docs: List[Dict] = ctx.artifacts.get("rag_docs", [])
         if not rag_docs:
-            return StageResult(failure_count=1, notes="no_rag_docs")
+            return StageResult(
+                success_count=0,
+                failure_count=0,
+                notes="skipped: rag_documents.json missing (generate manually via docs/generate_rag_documents.md)",
+            )
 
         metrics = self._inserter(rag_docs)
         ctx.artifacts["vectordb_metrics"] = metrics
@@ -471,7 +485,7 @@ class PPTPipeline:
         # RAG prep (reuse QA chunk pipeline)
         rag_start = time.time()
         rag_docs: List[Dict] = []
-        if profile:
+        if profile and self.settings.auto_ragprep_enabled:
             project_name = profile.project_name or pptx_path.stem
 
             from src.rag.qa_generator import QAGenerator
@@ -533,6 +547,15 @@ class PPTPipeline:
             rag_path = output_dir / "embeddings" / "rag_documents.json"
             ensure_dir(rag_path.parent)
             save_json(rag_docs, rag_path)
+        elif profile and not self.settings.auto_ragprep_enabled:
+            rag_path = output_dir / "embeddings" / "rag_documents.json"
+            if rag_path.exists():
+                rag_docs = load_json(rag_path)
+            else:
+                ctx.log(
+                    "[refine_ragprep] Auto generation disabled. Provide embeddings/rag_documents.json manually per "
+                    "docs/generate_rag_documents.md before re-running refine if you need updated vectors."
+                )
         else:
             errors.append({"stage": "refine_ragprep", "error": "profile_missing"})
 
@@ -543,8 +566,8 @@ class PPTPipeline:
                 ended_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 duration_seconds=round(time.time() - rag_start, 2),
                 success_count=len(rag_docs),
-                failure_count=0 if rag_docs else 1,
-                notes="vectorsink skipped (refine)",
+                failure_count=0,
+                notes="vectorsink skipped (refine; manual ragprep)",
             )
         )
 

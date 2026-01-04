@@ -35,7 +35,7 @@
 ---
 
 ## 功能特性
-- 一键处理 PPT：渲染 → 文本提取 → 单页总结 → 项目画像 → RAG 文档生成
+- 一键处理 PPT：渲染 → 文本提取 → 单页总结 → 项目画像；RAG 文档生成改为手工（按 `docs/generate_rag_documents.md`）
 - RAG v2 QA-pair 方案：自动生成问答对、LLM 分类、多类型 chunk（qa_pair/topic/step/metrics/overview）
 - 向量检索与重排：M3E 中文 embedding + Chroma 向量库 + 相似度护栏（top_k/top_n/tau 可调）
 - 多种交互方式：
@@ -110,6 +110,7 @@ pdftoppm -h | head -n 1
   - `llm_provider` / `llm_model` / `llm_api_key` / `llm_base_url`：LLM 配置（支持 `mock` 模式）
   - `vectordb_enabled` / `vectordb_provider` / `vectordb_persist_dir`：向量库配置
   - `embedding_model` / `embedding_device`：M3E 模型与设备选择（cpu/cuda/mps）
+  - `auto_ragprep_enabled`：是否启用自动 RAG 文档生成，默认 `false`（改为人工生成 `rag_documents.json`，见 `docs/generate_rag_documents.md`）
   - `enable_llm_classify` / `enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks`：RAG v2 功能开关
   - `soffice_path` / `pdftoppm_path`：渲染工具路径（可选，默认从 PATH 查找）
 - CLI 可通过 `--config` 参数指定配置文件路径
@@ -129,6 +130,8 @@ python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --force
 # 详细日志
 python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --verbose
 ```
+
+> 当前默认关闭自动 RAG 生成。运行主流程后，会得到 `page_summaries/` 与画像；请按 `docs/generate_rag_documents.md` 用 Claude Code / Codex 手工生成 `embeddings/rag_documents.json`，再重跑 `python -m src`（会复用前面产物并执行向量入库），或使用 `src/scripts/vectordb_cli import` 直接导入。
 
 ### 向量库管理
 ```bash
