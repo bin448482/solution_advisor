@@ -29,7 +29,7 @@ from src.prompts import get_guided_templates
 
 # Page config
 st.set_page_config(
-    page_title="解决方案顾问",
+    page_title="项目AI助手",
     page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded"
@@ -297,7 +297,7 @@ def main():
     init_session_state()
 
     # Header
-    st.title("解决方案顾问")
+    st.title("项目AI助手")
     st.markdown("基于 RAG 的智能问答系统")
 
     # Sidebar

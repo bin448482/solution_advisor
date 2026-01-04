@@ -2,10 +2,10 @@
 
 将项目介绍类 PPT 自动转换为结构化画像与 RAG 知识库，支持端到端渲染、抽取、总结与问答。
 
-> 项目类型：AI / Tool / CLI  
-> 主要语言：Python 3.9+  
-> 技术栈：LibreOffice、Poppler、Chroma、LLM（可 mock）、FastAPI/CLI（内部）  
-> 目标用户：Developers / Internal Teams
+> 项目类型：AI / Tool / CLI / Web App
+> 主要语言：Python 3.9+
+> 技术栈：LibreOffice、Poppler、Chroma、M3E、LLM（可 mock）、Streamlit、LangChain
+> 目标用户：Developers / Internal Teams / Solution Consultants
 
 ---
 
@@ -38,7 +38,10 @@
 - 一键处理 PPT：渲染 → 文本提取 → 单页总结 → 项目画像 → RAG 文档生成
 - RAG v2 QA-pair 方案：自动生成问答对、LLM 分类、多类型 chunk（qa_pair/topic/step/metrics/overview）
 - 向量检索与重排：M3E 中文 embedding + Chroma 向量库 + 相似度护栏（top_k/top_n/tau 可调）
-- 多种交互方式：CLI 批处理、QA CLI 问答
+- 多种交互方式：
+  - CLI 批处理（PPT 解析）
+  - QA CLI 问答（命令行）
+  - **Streamlit Web UI**（可视化问答界面，支持项目选择、参数调节、引用展示、反馈收集）
 - 可切换 LLM 提供商，支持 `mock` 模式离线调试
 - 与 LibreOffice / Poppler 集成的可移植渲染链路
 - 监控与缓存：精确缓存（TTL 7 天）+ JSONL 日志记录
@@ -59,6 +62,7 @@
   - `python -m src`：PPT 解析主流程 CLI
   - `src/scripts/qa_cli.py`：命令行问答
   - `src/scripts/vectordb_cli.py`：向量库管理（导入/查询/统计/删除）
+  - **`src/ui/streamlit_app.py`：Streamlit Web UI（可视化问答界面）**
 - 数据与存储：本地文件系统 + `chroma_db/` 向量库 + `logs/qa_sessions/` 日志
 - 扩展点：LLM 客户端、RAG 开关（enable_llm_classify/enable_*_chunks）、召回与重排参数、prompt 模板
 
@@ -80,8 +84,11 @@
 git clone https://github.com/your-org/solution_advisor.git
 cd solution_advisor
 
-# 安装依赖（示例）
+# 安装依赖
 pip install -r requirements.txt
+
+# 如需使用 Web UI，额外安装 Streamlit
+pip install streamlit>=1.30.0
 ```
 
 安装 LibreOffice / Poppler（PPT 渲染必需）：
@@ -153,6 +160,26 @@ python -m src.scripts.qa_cli -q "核心功能是什么" -p ChatBI --config confi
 python -m src.scripts.qa_cli -q "架构设计" --top-k 8 --top-n 5 --tau 0.5
 ```
 
+### Streamlit Web UI（推荐）
+```bash
+# 启动 Web 界面
+streamlit run src/ui/streamlit_app.py
+
+# 指定端口
+streamlit run src/ui/streamlit_app.py --server.port 8501
+```
+
+**功能特性：**
+- 项目选择与参数调节（top_k、top_n、tau）
+- 自然语言问答（流畅段落回答，无生硬列表）
+- 缓存状态显示（⚡ 图标）
+- 对话历史管理
+- 反馈收集（👍/👎/评论）
+- 可选：显示引用来源（调试用）
+- 可选：对话引导模式（澄清问题 + 追问建议）
+
+**访问地址：** http://localhost:8501
+
 ### 监控与缓存
 - `qa_cli` 默认启用 `QAMonitor`
 - 命中缓存时输出 `[cache hit/<level>]` 前缀
@@ -190,6 +217,7 @@ python -m src.scripts.qa_cli -q "架构设计" --top-k 8 --top-n 5 --tau 0.5
 │  ├─embeddings/            # M3E 向量模型封装
 │  ├─vectordb/              # Chroma 向量库封装 + 检索护栏
 │  ├─qa/                    # QA 引擎 + 监控/缓存
+│  ├─ui/                    # Streamlit Web UI
 │  ├─scripts/               # CLI 工具（qa_cli、vectordb_cli）
 │  ├─pipeline.py            # 端到端编排
 │  ├─config.py              # 配置加载
