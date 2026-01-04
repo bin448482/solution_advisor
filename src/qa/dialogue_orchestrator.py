@@ -37,7 +37,7 @@ class DialogueState:
 
 
 class DialogueOrchestrator:
-    """封装 QAEngine，为 Gradio/CLI 提供引导式对话能力。"""
+    """封装 QAEngine，为 CLI 等调用提供引导式对话能力。"""
 
     def __init__(
         self,

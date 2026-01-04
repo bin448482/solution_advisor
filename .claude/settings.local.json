@@ -12,7 +12,10 @@
       "Bash(dir:*)",
       "WebFetch(domain:blog.csdn.net)",
       "WebFetch(domain:www.geeksforgeeks.org)",
-      "WebFetch(domain:www.33rdsquare.com)"
+      "WebFetch(domain:www.33rdsquare.com)",
+      "Bash(set STREAMLIT_BROWSER_GATHER_USAGE_STATS=false)",
+      "Bash(streamlit run:*)",
+      "Bash(test:*)"
     ]
   }
 }

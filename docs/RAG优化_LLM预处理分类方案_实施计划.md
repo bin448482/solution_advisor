@@ -1,99 +1,75 @@
-# RAG 优化：LLM 预处理分类实施计划
+# RAG 优化：LLM 预处理分类实施计划（重写版）
 
-**日期**：2026-01-02  
+**日期**：2026-01-03  
 **适用项目**：`ChatBI产品介绍_2025` 及后续同类 PPT 项  
-**输入来源**：`ppt_outputs/<项目>/page_summaries/*.json`（现有 PageSummary）  
-**目标产出**：`ppt_outputs/<项目>/embeddings/rag_documents.json`（含分类元数据），并入向量库（Chroma）
+**输入来源**：`ppt_outputs/<项目>/page_summaries/*.json`（单页总结，已与 slides 对齐）  
+**核心目标**：在“知识沉淀”阶段按类别生成高质量摘要与问答，降低对纯向量相似度的依赖，提升命中与可控性。
 
 ---
 
-## 1. 现状摘要
-- 之前按“每页 1 个 chunk”入库，粒度粗、主题混杂，纯向量检索噪声多。
-- 目标转向：**预编排问答 + 相似度匹配**，不强依赖在线分类。通过预先整理高价值问题及答案，降低噪声、提升命中。
+## 1. 目标与痛点
+- 现状：直接把每页 QA/metrics 送入向量库，依赖相似度；对问题语义、专业词的理解不足，导致召回噪声和回答不理想。
+- 目标：先按 **Category** 聚合 `page_summaries`，用 LLM 生成“类别权威摘要 + 代表问答”，再入库。这样检索优先命中“按类沉淀的知识块”，而非零散页粒度。
 
-## 2. 方案概览（预编排 QA 优先）
-在知识沉淀阶段，先基于 PageSummary / 项目画像编排“核心问答清单”，再入库：
-1) **QA 对块为主**：每个高价值问题生成 1 个答案块；同一主题列出 5–10 个多样化问法。  
-2) **主题块/步骤/指标** 可选补充，用于长文回答或复杂流程，但不必按页全量存。  
-3) 项目 overview 保留少量全局语境。
+## 2. 新版输出物
+- `ppt_outputs/<项目>/embeddings/rag_documents.json`
+  - `category_summary`：每个 Category 1 条，LLM 基于该类相关的 `page_summaries` 生成摘要+精选问答。
+  - `qa_pair`：保留单页 QA（可选，用于细粒度补充）。
+  - `metrics`：结构化指标块（数值问答）。
+  - `overview`：项目级画像。
+- `ppt_outputs/<项目>/embeddings/manifest` 同步计数，供质检。
 
-## 3. 分类/标签（可选）
-- 若需要主题标签，用固定映射表（ID + 中文名）而非在线分类；过滤可选用 `_id` 字段。  
-- 但核心检索依赖“问句相似度”而非分类过滤，分类只作轻量辅助。
+## 3. Chunk 设计
+| chunk_type | 粒度 | 内容 | 生成方式 | 用途 |
+| --- | --- | --- | --- | --- |
+| category_summary（新增主力） | category | 该类的权威摘要 + 3~5 代表问答（问/答各 80~200 字） | LLM 聚合同类 `page_summaries` | 主力检索、冷启动 |
+| qa_pair（次要） | slide | 单页 QA，对应来源页 | LLM/Mock 每页生成 | 细粒度补充 |
+| metrics | slide | 指标/表格摘要，`metric_items` | 规则+LLM | 数值问答 |
+| overview | project | 项目画像 | LLM | 全局语境 |
 
-## 4. Chunk 设计（以 QA 为主）
-| chunk_type | 粒度 | 组成 | 适用场景 |
-| --- | --- | --- | --- |
-| qa_pair (主) | 80~150 词 | 预编排问法（多样化）+ 精炼答案；1 问 1 答 | 主力检索，低噪声 |
-| topic (辅) | 150~300 词 | 同一主题的 bullets+details 语义分段，含 title_hint | 长文补充/引用 |
-| step (可选) | 80~150 词 | 流程/步骤拆分；step_no, step_group | “如何做/流程”问法 |
-| metrics (可选) | 80~150 词 | 指标/表格摘要，含数字项 | 数值型问答 |
-| overview | 200~300 词 | 项目画像，slide_no=0 | 全局语境、冷启动 |
+## 4. 元数据模型（关键字段）
+- 通用：`project_name`, `chunk_type`, `level`, `category_id/name?`, `source_slide_refs`, `source_file|source_files`.
+- `category_summary`：
+  - `level="category"`, `category_id/name` 必填
+  - `source_files`: 参与聚合的 `page_summaries/*.json`
+  - `metadata.summary`: 类别摘要正文（与 `text` 同步存储，便于下游只读元数据）
+  - `metadata.qa_examples`: 代表问答列表（问题、答案截断、来源 slide_no）
+- QA/metrics/overview 沿用现有字段，`original_json` 精简为来源信息（不再全量序列化）。
 
-## 5. 元数据规范
-- 基础：`project_name`, `chunk_type`, `source_slide_refs`（列表，可为空）, `level`。  
-- 标签（可选）：`category_id`（固定表，如 integration）、`category_name`（中文可读）；多标签用 `|` 串。  
-- QA 专属：`qa_question`（主问法），`alt_questions`（`|` 串，同义问法），`answer` 存在 `text` 字段。  
-- 追溯：`indexed_at`、`original_json`。
+## 5. 处理流程（新版）
+1) **Capture/Extract/Interpret**：保持现有步骤，得到 `slides/` 与 `page_summaries/`。  
+2) **聚类分桶**：依据 `PageSummary.entities/signals/title` 粗分到 8 类 Category（规则 + 可选 LLM classifier）。  
+3) **Category 摘要生成**（新增主线）  
+   - 输入：同一 Category 的 `page_summaries` 原文（标题/要点/细节）。  
+   - 调用 LLM 生成：
+     - `summary`：该类的 200~300 字权威摘要。  
+     - `qa_examples`：3~5 条高价值问答，覆盖不同子主题，附 `source_slide_refs`。  
+   - 产出 `category_summary` chunk。  
+4) **QA/metrics/overview**：可配置保留，按原逻辑生成。  
+5) **写出 rag_documents.json**：所有 chunk，`metadata` 中存 `summary`/`qa_examples`（仅 category_summary）与来源信息。  
+6) **向量入库**：`ChromaStore` upsert，`documents` 用 `text`，`metadatas` 记录 `chunk_type`、`category_id` 等。  
 
-## 6. 处理流程（QA 优先）
-1) 读取 PageSummary / 项目画像，人工或 LLM 辅助列出核心问题清单（多问法）。  
-2) 为每个问题生成精炼答案（可用 LLM 基于 PageSummary/原文组装，人工校对）。  
-3) 形成 `qa_pair` chunk：`qa_question`+`alt_questions`+`answer`，附 `category_id/name`（可选）与 `source_slide_refs`。  
-4) 选做：对剩余长文生成 topic / step / metrics 块补充。  
-5) 写出 `embeddings/rag_documents.json`，序列化多值字段为字符串。  
-6) 入库：`vectordb_cli import-docs`。  
-7) 验证：块数、问法覆盖度、导入 0 失败；冒烟查询（纯相似度检索问句）。
+## 6. 配置与开关
+- `enable_category_summary_chunks`（默认开）：生成类别摘要（主力）。  
+- `enable_llm_classify`：是否用 LLM 分类 PageSummary（否则规则分桶）。  
+- `enable_topic_chunks` / `enable_step_chunks`：保持关闭（legacy）。  
+- `enable_metrics_chunks`：可选开关。  
 
-## 7. 评估计划
-- 数据：抽样 ≥100 slides 标注真值（分类 + 相关性）。  
-- 指标：P@5 / R@10（有/无分类过滤对比）；未分类率；分类一致性（kappa）。  
-- 实验：A/B 检索（A=仅向量，B=分类过滤+向量），记录命中率差异。
+## 7. 质量与验证
+- 覆盖度：每个有内容的 Category 必须生成 1 条 `category_summary`。  
+- 长度：摘要 200~300 字；每条 QA 答案 ≤200 字。  
+- 追溯：`source_files`/`source_slide_refs` 必填，便于质检。  
+- 验证脚本（待实现）：统计 chunk 数、字段完整性，抽查相似度查询命中率；人工抽样 10% 比对原文。  
 
-## 8. 检索使用示例（无分类也可命中）
-- 问句：“用户可以通过哪些入口提问（Web、移动、钉钉/企业微信、内嵌组件）？”  
-  - 直接向量检索：对比 `qa_question`/`alt_questions` 做相似度；返回的 qa_pair 应在答案中明确列出 Web/移动/钉钉/企微/内嵌/SDK/IM 等。  
-  - 若启用轻量标签过滤：`where={"category_id": {"$contains": "integration"}}`（可选，非必需）。  
-- 低置信回退：若 top1 相似度 < 阈值（如 0.5），提示改写或返回 top_k 供选择。
+## 8. 发布与回滚
+- 双写期：生成新 rag 文档 + 新 collection；检索先灰度切到 `category_summary` 优先（QA 作补充）。  
+- 回滚：关闭 `enable_category_summary_chunks`，恢复旧 QA-only 策略；保留旧向量集合。  
 
-## 9. 发布与回滚
-- 增加特性开关：`ENABLE_LLM_CLASSIFY`、`ENABLE_TOPIC_CHUNKS`（默认关）。  
-- 双写期：生成新 rag_documents + 入库，但检索侧先按旧逻辑；验证后再放量开启分类过滤。  
-- 回滚：关闭开关、保留旧向量，或清理新 collection。
-
-## 10. 成本与性能
-- 规则分类零成本；LLM 终判：每页约 400–600 tokens，40 页≈2.4 万 tokens；选 GPT-4o-mini/Haiku，批量 8–10 页。  
-- QA 生成：每主题 2–3 Q&A，控制总 tokens，必要时只对高价值主题生成。  
-- 并发 3–5；新增耗时 < 2s/页为目标。
-
-## 11. 后续迭代
-- 置信度字段（LLM 返回 score）；  
-- 分类导航/分布统计；  
-- 主题聚类与知识图谱探索；  
-- 与 `page_type` 统一映射表，定期清洗旧库。
-
-## 12. 操作清单（MVP）
-1) 实现分类与重切分脚本/模块（可复用 `src/rag.py` 新增分类函数）。  
-2) 生成新的 `rag_documents.json`。  
-3) 更新 manifest 中 `rag_documents` 计数。  
-4) `vectordb_cli import-docs` 重建 Chroma。  
-5) 冒烟查询 + 抽样质检。  
-6) 记录实验结果，决定是否启用分类过滤。
-
-## 13. QA 问答缓存衔接（2026-01-02 更新）
-- 缓存仅保留“精确匹配”两级：内存索引（启动时加载 `logs/qa_sessions/qa_cache.jsonl`）+ JSONL 持久化，键为 `normalize(question)+project_name+vectordb_version`。  
-- 语义相似度缓存/向量匹配已关闭；未命中时直接走项目内向量检索，不再对历史问题做向量相似度比对。  
-- 现网配置：`qa.cache.cache_semantic_enabled=false`，命中返回 `cache_level=exact`，便于问题复用且避免多余的向量查询。
+## 9. 资源与成本
+- Category 汇总调用量：按 8 类计，每类 1 次；比逐页分类大幅降成本。  
+- 模型建议：摘要用 GPT-4o-mini / Claude-Haiku；QA 生成可复用同一模型；temperature 0.1 保持稳定。  
 
 ---
 
-**状态**：实施计划（可立即执行）  
-**待决策**：是否使用 LLM 分类（成本 vs 质量），是否开启检索侧分类过滤。
-
----
-
-**2026-01-02 实施同步**  
-- 已落地特性开关：`enable_llm_classify`、`enable_topic_chunks`、`enable_step_chunks`、`enable_metrics_chunks`（配置默认关闭）。  
-- refine 流程与主线保持一致，统一生成 QA/Topic/Step/Metrics/Overview chunk。  
-- 元数据增加 `source_slide_refs`，所有 list 元数据入库前统一序列化为 JSON 字符串，便于追溯与过滤。  
-- mock LLM（测试）下提供确定性 QA 生成，避免 JSON 解析失败导致 rag 文档缺失。
+**状态**：实施计划（已确认方向，可立即开发）  
+**待办**：实现新的聚合/摘要流水线、验证脚本，并更新 AGENTS/README。

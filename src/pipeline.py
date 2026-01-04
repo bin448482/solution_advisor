@@ -17,7 +17,8 @@ from src.models import (
     VectorDBMetrics,
 )
 from src.pipeline_runner import PipelineContext, PipelineRunner, Stage, StageResult
-from src.rag import clean_summary_for_embedding, prepare_project_embedding, prepare_slide_embedding
+# NOTE: Legacy RAG v1 helpers (prepare_* / clean_summary_for_embedding) are intentionally
+# not imported/used anymore. RAG v2 uses QA 对 + ChunkGenerator in stages below.
 from src.renderer import LibreOfficeRenderer, RenderError
 from src.summarizer import LLMClient, PageSummarizer, ProfileGenerator
 from src.utils import compute_sha256, ensure_dir, load_json, save_json
@@ -239,6 +240,11 @@ class RAGPrepStage:
             if "metrics" in chunk_types and ctx.settings.enable_metrics_chunks:
                 metrics_chunks = chunk_generator.generate_metrics_chunks(summary, project_name)
                 all_chunks.extend([c.model_dump() for c in metrics_chunks])
+
+        # Category summary chunks (project-level aggregation)
+        if ctx.settings.enable_category_summary_chunks:
+            category_chunks = chunk_generator.generate_category_summary_chunks(all_qa_pairs, project_name)
+            all_chunks.extend([c.model_dump() for c in category_chunks])
 
         # Step 4: Project overview chunk
         overview_chunk = chunk_generator.generate_overview_chunk(profile, project_name)
@@ -517,6 +523,9 @@ class PPTPipeline:
                     rag_docs.extend([c.model_dump() for c in chunk_generator.generate_step_chunks(summary, project_name)])
                 if "metrics" in chunk_types and self.settings.enable_metrics_chunks:
                     rag_docs.extend([c.model_dump() for c in chunk_generator.generate_metrics_chunks(summary, project_name)])
+
+            if self.settings.enable_category_summary_chunks:
+                rag_docs.extend([c.model_dump() for c in chunk_generator.generate_category_summary_chunks(all_qa_pairs, project_name)])
 
             overview_chunk = chunk_generator.generate_overview_chunk(profile, project_name)
             rag_docs.append(overview_chunk.model_dump())

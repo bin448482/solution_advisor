@@ -70,6 +70,9 @@ class Settings(BaseModel):
     enable_topic_chunks: bool = Field(default=False, description="是否生成 topic chunk")
     enable_step_chunks: bool = Field(default=False, description="是否生成 step chunk")
     enable_metrics_chunks: bool = Field(default=False, description="是否生成 metrics chunk")
+    enable_category_summary_chunks: bool = Field(
+        default=True, description="是否生成按分类聚合的 category_summary chunk"
+    )
 
     # QA Monitor & Cache
     qa: QASettings = Field(default_factory=QASettings)

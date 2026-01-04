@@ -17,8 +17,9 @@ PageSummary
     ↓
 [ChunkGenerator] → Multiple chunk types:
     ├─ qa_pair (5-10 per slide)
-    ├─ topic (1-3 if applicable)
-    ├─ step (1-5 if applicable)
+    ├─ category_summary (1 per category)
+    ├─ topic (legacy, optional)
+    ├─ step (legacy, optional)
     ├─ metrics (0-2 if applicable)
     └─ overview (1 per project)
     ↓
@@ -72,8 +73,8 @@ class ChunkDocument(BaseModel):
 {
     "project_name": "ChatBI",
     "slide_no": 3,
-    "chunk_type": "qa_pair",         # qa_pair|topic|step|metrics|overview
-    "level": "slide",                # slide|project
+    "chunk_type": "qa_pair",         # qa_pair|metrics|overview|category_summary|topic|step
+    "level": "slide",                # slide|project|category
     "confidence": 0.92,
 
     # QA-specific fields
@@ -88,7 +89,9 @@ class ChunkDocument(BaseModel):
     # Legacy fields (for compatibility)
     "page_type": ["data_sources", "integration"],
     "entities": ["ChatBI", "MySQL", "PostgreSQL"],
-    "source_slide_refs": [3]
+    "source_slide_refs": [3],
+    "source_file": "page_summaries/003.json",
+    "source_files": null
 }
 ```
 

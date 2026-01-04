@@ -29,3 +29,6 @@ build/
 .env
 # Local YAML config with secrets
 config/settings.yaml
+/backup
+
+/tests/qa_test_results

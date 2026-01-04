@@ -454,6 +454,7 @@ The repository uses paired hierarchical docs (`AGENTS.md` + `CLAUDE.md`) to keep
 | `src/embeddings/AGENTS.md` | M3E 向量模型加载与编码策略。 |
 | `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤。 |
 | `src/qa/AGENTS.md` | QA 引擎 + 监控/缓存职责、配置键说明。 |
+| `src/ui/AGENTS.md` | Streamlit Web UI 入口、运行方式与测试要点。 |
 | `src/scripts/AGENTS.md` | QA/Vectordb CLI 参数、输出与错误处理。 |
 | `tests/AGENTS.md` | 测试覆盖、跳过条件与烟囱测试说明。 |
 
@@ -468,6 +469,7 @@ The repository uses paired hierarchical docs (`AGENTS.md` + `CLAUDE.md`) to keep
 | `src/embeddings/CLAUDE.md` | 向量模型选择、缓存、设备策略与性能提示。 |
 | `src/vectordb/CLAUDE.md` | Chroma 集成、检索护栏与统计/维护命令。 |
 | `src/qa/CLAUDE.md` | QA Engine 提示构建、输出格式与 guardrail 逻辑。 |
+| `src/ui/CLAUDE.md` | Streamlit UI 设计、会话管理与同步/流式模式说明。 |
 | `src/scripts/CLAUDE.md` | CLI 使用案例、参数说明与常见故障排查。 |
 
 ## External Consulting Agent (Future)

@@ -50,24 +50,33 @@ class QAPair(BaseModel):
 class ChunkMetadata(BaseModel):
     """Standardized metadata schema for all chunk types."""
     project_name: str
-    slide_no: int
-    chunk_type: str  # qa_pair | topic | step | metrics | overview
-    level: str  # slide | project
-    confidence: float
+    chunk_type: str  # qa_pair | metrics | overview | category_summary | topic | step
+    level: str  # slide | project | category
+
+    # Confidence/score
+    confidence: Optional[float] = None
+
+    # Optional slide reference (for backward compatibility)
+    slide_no: Optional[int] = None
 
     # QA-specific fields
     qa_question: Optional[str] = None
     alt_questions: Optional[List[str]] = None
     answer: Optional[str] = None
 
+    # Metrics-specific fields
+    metric_items: Optional[List[Dict[str, Any]]] = None
+
     # Classification
     category_id: Optional[str] = None
     category_name: Optional[str] = None
 
     # Traceability
-    source_slide_refs: Optional[List[int]] = None
+    source_slide_refs: List[int] = Field(default_factory=list)
+    source_file: Optional[str] = None          # 单来源文件，如 page_summaries/003.json
+    source_files: Optional[List[str]] = None   # 多来源文件（聚合类 chunk）
 
-    # Legacy fields (for compatibility)
+    # Legacy fields (kept for retrieval heuristics)
     page_type: Optional[List[str]] = None
     entities: Optional[List[str]] = None
 
