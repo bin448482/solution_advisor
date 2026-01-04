@@ -20,7 +20,6 @@ There is **no build/test runner committed yet**. Common repo checks:
 - `find docs -name "*.md" -maxdepth 1` — list key docs for review.
 - `ls -la ppts ppt_outputs` — verify inputs vs generated artifacts.
 - `python -m src.scripts.qa_cli -q "ChatBI的核心功能是什么" [-p <项目名>] --config config/settings.yaml` — 运行 RAG 问答 CLI（top_k/top_n/tau 可调）。
-- `python -m src.scripts.qa_gradio --config config/settings.yaml` — 启动 Gradio Web UI（引导式对话主入口）。
 
 When adding an automation pipeline (PPT→images→summaries), provide a single entrypoint, e.g. `python -m <module> --input ppts/... --out ppt_outputs/...`.
 

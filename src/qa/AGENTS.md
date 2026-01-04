@@ -6,4 +6,4 @@ Role: QA 引擎 + 监控与缓存中间层。
 - `qa_monitor.py`: JSONL 监控与缓存门面。`logs/qa_sessions/qa_logs_YYYYMMDD.jsonl` 按日滚动；精确缓存写 `logs/qa_sessions/qa_cache.jsonl`，并加载到内存索引，语义缓存已移除（2026-01-02）。
 - `dialogue_orchestrator.py`: 引导式多轮封装（阶段 3），支持 LLM 澄清/追问 JSON 解析与模板降级、语义去重 + 冷却（默认两轮）、fallback 计数，以及监控字段 `dialogue_phase/graph_node/graph_attempt/repeat_blocked_count/fallback_rate/unanswerable_detected`。
 - 配置键（见 `config/settings.example.yaml` → `qa.*`）：`monitor_enabled`、`monitor_sample_rate`、`cache_enabled`、`cache_ttl_days`、`cache_semantic_enabled`（兼容保留，默认 false）、`cache_semantic_threshold`（保留）、`cache_collection`（保留）、`cache_persist_dir`（保留）、`vectordb_version`。
-- 入口：`src/scripts/qa_gradio.py`（主 Web UI）与 `src/scripts/qa_cli.py`（备份 CLI）均复用同一引擎。
+- 入口：`src/scripts/qa_cli.py` 复用同一引擎。

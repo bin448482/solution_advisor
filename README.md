@@ -38,7 +38,7 @@
 - 一键处理 PPT：渲染 → 文本提取 → 单页总结 → 项目画像 → RAG 文档生成
 - RAG v2 QA-pair 方案：自动生成问答对、LLM 分类、多类型 chunk（qa_pair/topic/step/metrics/overview）
 - 向量检索与重排：M3E 中文 embedding + Chroma 向量库 + 相似度护栏（top_k/top_n/tau 可调）
-- 多种交互方式：CLI 批处理、QA CLI 问答、Gradio Web UI 引导式对话
+- 多种交互方式：CLI 批处理、QA CLI 问答
 - 可切换 LLM 提供商，支持 `mock` 模式离线调试
 - 与 LibreOffice / Poppler 集成的可移植渲染链路
 - 监控与缓存：精确缓存（TTL 7 天）+ JSONL 日志记录
@@ -58,7 +58,6 @@
 - 接口层：
   - `python -m src`：PPT 解析主流程 CLI
   - `src/scripts/qa_cli.py`：命令行问答
-  - `src/scripts/qa_gradio.py`：Gradio Web UI（引导式对话）
   - `src/scripts/vectordb_cli.py`：向量库管理（导入/查询/统计/删除）
 - 数据与存储：本地文件系统 + `chroma_db/` 向量库 + `logs/qa_sessions/` 日志
 - 扩展点：LLM 客户端、RAG 开关（enable_llm_classify/enable_*_chunks）、召回与重排参数、prompt 模板
@@ -154,15 +153,8 @@ python -m src.scripts.qa_cli -q "核心功能是什么" -p ChatBI --config confi
 python -m src.scripts.qa_cli -q "架构设计" --top-k 8 --top-n 5 --tau 0.5
 ```
 
-### Gradio Web UI（推荐）
-```bash
-# 启动引导式对话界面
-python -m src.scripts.qa_gradio --config config/settings.yaml
-```
-访问 http://localhost:7860 使用 Web 界面进行问答。
-
 ### 监控与缓存
-- `qa_cli` 和 `qa_gradio` 默认启用 `QAMonitor`
+- `qa_cli` 默认启用 `QAMonitor`
 - 命中缓存时输出 `[cache hit/<level>]` 前缀
 - 日志与精确缓存写入 `logs/qa_sessions/`（按日滚动 JSONL）
 - 语义缓存已下线，缓存命中仅依赖精确匹配（TTL 默认 7 天）
@@ -198,7 +190,7 @@ python -m src.scripts.qa_gradio --config config/settings.yaml
 │  ├─embeddings/            # M3E 向量模型封装
 │  ├─vectordb/              # Chroma 向量库封装 + 检索护栏
 │  ├─qa/                    # QA 引擎 + 监控/缓存
-│  ├─scripts/               # CLI 工具（qa_cli、qa_gradio、vectordb_cli）
+│  ├─scripts/               # CLI 工具（qa_cli、vectordb_cli）
 │  ├─pipeline.py            # 端到端编排
 │  ├─config.py              # 配置加载
 │  ├─models.py              # Pydantic 数据模型
@@ -239,7 +231,7 @@ pytest tests/ --cov=src --cov-report=html
 
 ## 部署（如适用）
 - 部署目标：本地/自托管服务器
-- 交付方式：Python CLI + Gradio Web UI；可封装为容器镜像（自行添加 Dockerfile）
+- 交付方式：Python CLI；可封装为容器镜像（自行添加 Dockerfile）
 - 关键参数：`config/settings.yaml` 中的 LLM、向量库、渲染工具路径配置
 - 依赖服务：LibreOffice、Poppler、LLM API（或 mock 模式）、Chroma 向量库
 
@@ -308,7 +300,7 @@ pytest tests/ --cov=src --cov-report=html
 - **测试回归**：`tests/tmp_run_tests.py` 直接调用包装函数，输出 `tests/tmp_embedding_test_round1.json` 供对比调参效果
 
 ### 监控与缓存
-- **QAMonitor**：`qa_cli` 和 `qa_gradio` 默认启用，命中缓存会在答案前打印 `[cache hit/<level>]`
+- **QAMonitor**：`qa_cli` 默认启用，命中缓存会在答案前打印 `[cache hit/<level>]`
 - **精确缓存**：基于问题文本的精确匹配，TTL=7 天，可用 `qa.cache.vectordb_version` 统一失效
 - **日志记录**：日志与缓存写入 `logs/qa_sessions/qa_logs_YYYYMMDD.jsonl` / `qa_cache.jsonl`（按日滚动）
 - **语义缓存已下线**：仅保留精确缓存，避免误命中
