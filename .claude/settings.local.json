@@ -15,7 +15,9 @@
       "WebFetch(domain:www.33rdsquare.com)",
       "Bash(set STREAMLIT_BROWSER_GATHER_USAGE_STATS=false)",
       "Bash(streamlit run:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(mkdir:*)",
+      "Bash(del:*)"
     ]
   }
 }

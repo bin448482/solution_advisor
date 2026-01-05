@@ -23,6 +23,12 @@ embedding_cache_dir: ./models            # Model cache directory
 
 # RAG generation mode
 auto_ragprep_enabled: false              # 默认关闭自动 RAG 生成，需按 docs/generate_rag_documents.md 手工产出 rag_documents.json
+map_batch_size: 10                       # Map 阶段批大小（页数）
+map_max_categories_per_batch: 6          # Map 阶段每批最多类别数
+reduce_target_categories: 10             # 合并后全局类别上限
+langgraph_max_concurrency: 4             # LangGraph map/reduce 并发
+map_temperature: 0.2
+reduce_temperature: 0.2
 
 # RAG feature toggles (cost/回滚保护)
 enable_llm_classify: false               # 是否调用 LLM 分类 QA 对
