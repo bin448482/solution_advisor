@@ -70,6 +70,12 @@ class Settings(BaseModel):
         default=False,
         description="是否启用自动 RAG 文档生成；默认关闭，改为人工生成 rag_documents.json（见 docs/generate_rag_documents.md）",
     )
+    map_batch_size: int = Field(default=10, description="Map 阶段的批大小（页数）")
+    map_max_categories_per_batch: int = Field(default=6, description="Map 阶段每批最多类别数")
+    reduce_target_categories: int = Field(default=10, description="合并后期望的全局类别上限")
+    langgraph_max_concurrency: int = Field(default=4, description="LangGraph map/reduce 最大并发任务数")
+    map_temperature: float = Field(default=0.2, description="Map 节点温度")
+    reduce_temperature: float = Field(default=0.2, description="Reduce 节点温度")
 
     # RAG feature toggles
     enable_llm_classify: bool = Field(default=False, description="是否启用 LLM 分类 QA 对")

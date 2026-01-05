@@ -2,28 +2,29 @@
 
 ## Overview
 
-The RAG v2 package implements a QA-pair-centric approach to RAG document generation, replacing the previous single-chunk-per-slide strategy with multi-chunk generation featuring question-answer pairs, LLM-based classification, and multiple chunk types.
+RAG 模块现支持两条路径：
+
+1) **默认（人工）**：关闭 `auto_ragprep_enabled`，人工生成 `embeddings/rag_documents.json`。  
+2) **自动（LangGraph Map-Reduce，2026-01-05 新增）**：开启 `auto_ragprep_enabled` 时，使用 `map_reduce_graph.py` 生成 **仅** `category_summary` + `overview`，专注聚合质量与可追溯性；旧的 QA/分类/多 chunk 自动分支已被替换。
 
 ## Architecture
 
 ### Data Flow
 
+**自动模式（LangGraph）**
 ```
-PageSummary
-    ↓
-[QAGenerator] → 5-10 QA pairs per slide（mock provider 时生成确定性伪造 QA，避免 JSON 解析失败）
-    ↓
-[LLMClassifier] → Batch classify (8 categories)
-    ↓
-[ChunkGenerator] → Multiple chunk types:
-    ├─ qa_pair (5-10 per slide)
-    ├─ category_summary (1 per category)
-    ├─ topic (legacy, optional)
-    ├─ step (legacy, optional)
-    ├─ metrics (0-2 if applicable)
-    └─ overview (1 per project)
-    ↓
-embeddings/rag_documents.json
+PageSummary list
+    ↓ prepare_batches (map_batch_size)
+map_categories (并行，3-6 类/批，JSON 严格输出)
+    ↓ merge_categories (按名称/语义合并，目标 6-12 类；可压缩“其他信息”)
+reduce_categories (并行，200-300 字摘要 + 3-5 QA，引用 slide_no)
+    ↓ build_overview (150-200 字项目综述)
+validate_emit → embeddings/rag_documents.json （category_summary + overview）
+```
+
+**Legacy/辅助模块（仍保留供人工或扩展）**
+```
+QAGenerator → LLMClassifier → ChunkGenerator (qa/topic/step/metrics/category_summary/overview)
 ```
 
 ## Data Models (models.py)
@@ -75,6 +76,8 @@ class ChunkDocument(BaseModel):
     "slide_no": 3,
     "chunk_type": "qa_pair",         # qa_pair|metrics|overview|category_summary|topic|step
     "level": "slide",                # slide|project|category
+    "summary": null,                 # LangGraph reduce/overview 会写入
+    "qa_examples": null,             # LangGraph reduce QA 列表
     "confidence": 0.92,
 
     # QA-specific fields
@@ -94,6 +97,36 @@ class ChunkDocument(BaseModel):
     "source_files": null
 }
 ```
+
+## LangGraph Map-Reduce (map_reduce_graph.py)
+
+### 作用
+- 自动模式唯一入口：`MapReduceCategoryGraph.run(summaries)` → 写 `embeddings/rag_documents.json`
+- 产物：`category_summary`（每类 1 条，含 summary/qa_examples/source_slide_refs/source_files）+ `overview`（1 条）。
+
+### 配置（Settings）
+- `map_batch_size` (默认 10) — Map 批大小（页数）
+- `map_max_categories_per_batch` (默认 6) — 每批最多类别
+- `reduce_target_categories` (默认 10) — 合并后类别上限，超出会收敛为“其他信息”
+- `langgraph_max_concurrency` (默认 4) — Map/Reduce 并发线程
+- `map_temperature` / `reduce_temperature` — 节点温度
+- 开关：`auto_ragprep_enabled=true` 才会走该流
+
+### 节点
+- `prepare_batches`：按批拆分 summaries
+- `map_categories`：并行调用 LLM（mock 时生成确定性占位）；解析失败降级为启发式摘要
+- `merge_categories`：同名/相似合并，数量超限时聚合到“其他信息”
+- `reduce_categories`：并行生成 200-300 字摘要 + 3-5 QA（含 `source_slide_refs`）
+- `build_overview`：150-200 字综述，基于所有类别摘要
+- `validate_emit`：结构校验并落盘
+
+### 回退与健壮性
+- 解析失败 → 启发式 fallback；mock provider → 固定可预测输出
+- 所有步骤错误收集到 `errors`，写入 `PipelineContext.errors`
+
+### 输出特点
+- `ChunkMetadata.summary` / `qa_examples` 写入，便于检索与 UI 展示
+- 仅生成聚合类 chunk，避免碎片化；需要 QA 粒度时仍可人工/扩展使用 `QAGenerator + ChunkGenerator`
 
 ## QA Generator (qa_generator.py)
 
@@ -207,16 +240,13 @@ def decide_chunk_types(summary: PageSummary) -> List[str]:
 
 ## Pipeline Integration (pipeline.py)
 
-### RAGPrepStage (Modified)
+### RAGPrepStage
+- 默认：如果 `embeddings/rag_documents.json` 已存在且未强制，则复用。
+- `auto_ragprep_enabled=false`：提示人工生成，返回 notes=manual_ragprep_required。
+- `auto_ragprep_enabled=true`：调用 `MapReduceCategoryGraph`，产出 category_summary + overview；旧的 QA/classify/chunk 自动分支已移除。
 
-Replaces the old single-chunk generation with QA-pair approach:
-
-1. **Generate QA Pairs** (parallel with ThreadPoolExecutor)
-2. **Batch Classify** (8-10 pairs per batch)
-3. **Generate Chunks** (qa/topic/step/metrics based on decision logic)
-4. **Add Overview** (project-level chunk)
-5. **Save** to `embeddings/rag_documents.json`
-6. **Feature toggles**: `Settings.enable_llm_classify` 决定是否执行第 2 步；`enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks` 控制可选 chunk 生成，默认关闭以控成本/便于回滚。
+### refine 流程
+- 同样使用 Map-Reduce 自动模式（若开启开关）；否则复用已有 rag_documents 或提示人工。
 
 ### Error Handling
 
@@ -291,12 +321,8 @@ cat ppt_outputs/demo/embeddings/rag_documents.json | jq '.[] | .metadata.chunk_t
 
 ### Expected Output
 
-- 5-10 qa_pair chunks per slide
-- 0-3 topic chunks per slide (if applicable)
-- 0-5 step chunks per slide (if sequential)
-- 0-2 metrics chunks per slide (if performance data)
-- 1 overview chunk per project
- - 元数据包含 `source_slide_refs`；写入 Chroma 前所有 list 元数据将 JSON 字符串化。
+- 自动模式：`category_summary` × (6-12) + `overview` × 1
+- 元数据包含 `source_slide_refs`/`source_files`/`summary`/`qa_examples`；写入 Chroma 前保持 list 结构（Chroma 插入层会处理 JSON 化）。
 
 ## Migration from Legacy
 
@@ -314,11 +340,10 @@ cat ppt_outputs/demo/embeddings/rag_documents.json | jq '.[] | .metadata.chunk_t
 
 ### Migration Steps
 
-1. Backup existing rag_documents.json
-2. Regenerate with new pipeline (--force flag)
-3. Rebuild vector DB
-4. Verify chunk counts and types
-5. Test retrieval quality
+1. 备份现有 rag_documents.json
+2. 如需自动模式：开启 `auto_ragprep_enabled=true`，运行 pipeline；如需粒度 QA，请继续用人工/legacy 生成
+3. 重新写入向量库（若启用）
+4. 校验类别摘要数量（6-12）与引用合法性
 
 ## Common Issues
 

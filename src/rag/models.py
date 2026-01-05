@@ -52,6 +52,8 @@ class ChunkMetadata(BaseModel):
     project_name: str
     chunk_type: str  # qa_pair | metrics | overview | category_summary | topic | step
     level: str  # slide | project | category
+    summary: Optional[str] = None
+    qa_examples: Optional[List[Dict[str, Any]]] = None
 
     # Confidence/score
     confidence: Optional[float] = None

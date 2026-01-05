@@ -21,6 +21,62 @@
 - Reduce：对每个全局类别汇总跨批 slide，生成 200–300 字 `category_summary` + 3–5 QA，附 `source_slide_refs`、`source_files`。
 - Overview：基于所有类别摘要生成 1 条项目级 `overview` chunk。
 
+## LangGraph 实现（取代旧自动 QA/chunk 分支）
+- 目标：彻底替换旧版 QA → 分类 → 多 chunk 的自动分支；`auto_ragprep_enabled=false` 仍为默认，人工优先不变。开启自动时，直接走 LangGraph Map/Reduce，产物仅 `category_summary` + `overview`。
+- 拆分节点：`load_batch`（读取批次 slide 摘要）→ `map_categories`（LLM 生成批次类别与摘要/QA）→ `merge_categories`（LLM 或向量合并全局类别）→ `reduce_category`（LLM 汇总类别）→ `build_overview`（LLM 输出 overview）→ `validate_emit`（结构校验 + 落盘）。
+- 编排方式：采用 LangGraph `StateGraph`，状态字段含 `batches`、`map_results`、`global_categories`、`reduce_results`、`overview`、`errors`。`map_categories` 并行处理每批；`reduce_category` 并行处理全局类别。
+- 伪代码（核心节点），放在 `src/rag/map_reduce_graph.py`：
+```python
+from langgraph.graph import StateGraph, END
+
+def map_categories(state):
+    # 输入: state["current_batch"]
+    # 输出: append 批次 map 结果
+    return {"map_results": state["map_results"] + [llm_map(state["current_batch"])]}
+
+def merge_categories(state):
+    merged = merge_with_llm_or_vectors(state["map_results"])
+    return {"global_categories": merged}
+
+def reduce_category(state):
+    cat = state["current_category"]
+    return {"reduce_results": state["reduce_results"] + [llm_reduce(cat)]}
+
+def build_overview(state):
+    return {"overview": llm_overview(state["reduce_results"])}
+
+def validate_emit(state):
+    validate_schema(state["reduce_results"], state["overview"])
+    persist(state, out_path)
+    return { "done": True }
+
+builder = StateGraph(dict)
+builder.add_node("map", map_categories)
+builder.add_node("merge", merge_categories)
+builder.add_node("reduce", reduce_category)
+builder.add_node("overview", build_overview)
+builder.add_node("validate_emit", validate_emit)
+
+builder.add_edge("map", "merge")
+builder.add_edge("merge", "reduce")
+builder.add_edge("reduce", "overview")
+builder.add_edge("overview", "validate_emit")
+builder.set_entry_point("map")
+builder.set_finish_point("validate_emit")
+graph = builder.compile(parallel_edges=[("map", "merge"), ("merge", "reduce")])
+```
+- 配置建议（`config.Settings` 复用/新增字段，沿用 `auto_ragprep_enabled` 作为总开关）：
+  - `map_batch_size`、`map_max_categories_per_batch`、`reduce_target_categories`、`map_temperature`/`reduce_temperature`。
+  - `langgraph_max_concurrency` 控制并行 map/reduce；默认 4~8。
+  - `llm_provider`/`model` 与现有 `LLMClient` 保持一致，便于复用缓存/监控。
+- Prompt 要点：
+  - Map：严格要求输出 JSON、每类 100–150 字摘要、可选 1–2 QA；附 `source_slide_refs`。
+  - Merge：给出候选类别列表，要求重命名并合并相似项（>0.8），输出 6–12 个全局类别及对应 slide_refs。
+  - Reduce：每类 200–300 字 `category_summary` + 3–5 QA，答案 ≤ 200 字，必须引用 slide_no。
+  - Overview：150–200 字，涵盖定位/价值/亮点/风险。
+- 校验与重试：`validate_emit` 节点可对 JSON 结构、长度、引用合法性做校验；若失败，记录 `errors` 并可选触发单节点重试（LangGraph 自带）。
+- 落地位置：新增 `src/rag/map_reduce_graph.py` + 对应 `AGENTS.md`；在 `pipeline.py` 的 RAGPrepStage 中，当 `auto_ragprep_enabled=true` 时直接调用 LangGraph（旧 QA/chunk 自动分支将被移除）。
+
 ## Map 层细节
 - 输入：当前批次的 `page_summaries` 精简字段（`slide_no`、`title/one_liner`、关键 bullets、entities）。
 - 批大小：推荐 8–12 页；根据 token 决定。
@@ -76,6 +132,7 @@
 ## 配置与开关
 - `Settings.auto_ragprep_enabled=true` 时启用自动版；默认 false。
 - 可增加 `map_batch_size`、`max_categories` 等设置（若落地代码需新增字段）。
+- 依赖约束：`requirements.txt` 已固定 `langchain==0.1.20`、`langgraph==0.1.13` 及对应 provider 版本，保持 API 兼容。
 
 ## 建议落地步骤
 1) 在 `RAGPrepStage` 内新增 `MapReduceCategoryBuilder`（map/merge/reduce 方法），调用 `LLMClient`。

@@ -6,6 +6,13 @@ RAG v2 包实现基于 QA 对的多类型 chunk 生成策略，用于优化向�
 
 ## 核心模块
 
+### map_reduce_graph.py
+- **LangGraph Map-Reduce**：`MapReduceCategoryGraph.run(summaries)` 生成 `category_summary` + `overview`（自动模式专用），落盘 `ppt_outputs/<ppt>/embeddings/rag_documents.json`
+- **节点**：prepare_batches → map_categories → merge_categories → reduce_categories → build_overview → validate_emit
+- **配置**：`map_batch_size` / `map_max_categories_per_batch` / `reduce_target_categories` / `langgraph_max_concurrency` / `map_temperature` / `reduce_temperature`
+- **特点**：Map/Reduce 线程池并行，LLM 失败降级为启发式汇总；mock 模式生成确定性占位内容。
+- **替换关系**：取代自动 QA+分类+多 chunk 分支；人工模式不变，仍可手工放置 `rag_documents.json`。
+
 ### models.py
 - **数据模型**：`Category`（8 类枚举）、`QAPair`、`ChunkDocument`、`ChunkMetadata`
 - **辅助函数**：`get_category_name()` 获取中文类别名
@@ -87,3 +94,4 @@ cat ppt_outputs/demo/embeddings/rag_documents.json | jq '.[] | .metadata.chunk_t
 ## 变更记录
 
 - 2026-01-02：实现 RAG v2（QA-pair 方案），替换单 chunk 策略
+- 2026-01-05：新增 LangGraph Map-Reduce（自动模式），默认仅生成 category_summary + overview

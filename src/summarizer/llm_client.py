@@ -47,7 +47,7 @@ class LLMClient:
 
         raise ValueError(f"Unsupported LLM provider: {self.provider}")
 
-    def generate(self, prompt: str, image_path: Optional[Path] = None) -> str:
+    def generate(self, prompt: str, image_path: Optional[Path] = None, *, temperature: float | None = None) -> str:
         if self.is_mock:
             return prompt
 
@@ -63,7 +63,11 @@ class LLMClient:
                 text_prompt += f"\n[Image path: {image_path}]"
             messages = [HumanMessage(content=text_prompt)]
 
-        response = self._client.invoke(messages)
+        invoke_kwargs = {}
+        if temperature is not None:
+            invoke_kwargs["temperature"] = temperature
+
+        response = self._client.invoke(messages, **invoke_kwargs)
         raw = response.content
         if isinstance(raw, list):
             text_parts = []
