@@ -31,6 +31,7 @@ class QAGuidedSettings(BaseModel):
     suggestion_count: int = Field(default=3)
     templates_path: str = Field(default="src/prompts/guided_templates.yaml")
     gap_similarity_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    llm_prompt_path: str | None = Field(default="src/prompts/guided_llm.txt")
 
 
 class QASettings(BaseModel):
@@ -47,6 +48,7 @@ class Settings(BaseModel):
     llm_base_url: str | None = Field(default=None)
     llm_model: str = Field(default="gpt-4-vision-preview")
     llm_temperature: float = Field(default=0.1)
+    llm_timeout: float | None = Field(default=30.0, description="LLM 请求超时时间（秒），None 表示不设超时")
 
     render_dpi: int = Field(default=150)
     max_workers: int = Field(default=3)
