@@ -1,10 +1,10 @@
 # Solution Advisor · PPT解析与项目画像流水线
 
-将项目介绍类 PPT 自动转换为结构化画像与 RAG 知识库，支持端到端渲染、抽取、总结与问答。
+将项目介绍类 PPT 自动转换为结构化画像与 RAG 知识库，默认产出以 **category_summary + overview** 为主的高质量 `rag_documents.json`，并可选启用 LangGraph Map-Reduce 自动化生成。
 
 > 项目类型：AI / Tool / CLI / Web App
 > 主要语言：Python 3.9+
-> 技术栈：LibreOffice、Poppler、Chroma、M3E、LLM（可 mock）、Streamlit、LangChain
+> 技术栈：LibreOffice、Poppler、LangChain/LangGraph、Chroma、M3E、LLM（可 mock）、Streamlit
 > 目标用户：Developers / Internal Teams / Solution Consultants
 
 ---
@@ -17,34 +17,44 @@
 ---
 
 ## 目录
-- [功能特性](#功能特性)
-- [架构 / 设计概览](#架构--设计概览)
-- [前置条件](#前置条件)
-- [安装](#安装)
-- [配置](#配置)
-- [使用示例](#使用示例)
-- [项目结构](#项目结构)
-- [开发指南](#开发指南)
-- [测试](#测试)
-- [部署（如适用）](#部署如适用)
-- [路线图（可选）](#路线图可选)
-- [贡献指南](#贡献指南)
-- [许可证](#许可证)
-- [维护者 / 联系方式](#维护者--联系方式)
+- [Solution Advisor · PPT解析与项目画像流水线](#solution-advisor--ppt解析与项目画像流水线)
+  - [徽章（可选）](#徽章可选)
+  - [目录](#目录)
+  - [功能特性](#功能特性)
+  - [架构 / 设计概览](#架构--设计概览)
+  - [前置条件](#前置条件)
+  - [安装](#安装)
+  - [配置](#配置)
+  - [使用示例](#使用示例)
+    - [PPT 解析主流程](#ppt-解析主流程)
+    - [向量库管理](#向量库管理)
+    - [问答 CLI](#问答-cli)
+    - [Streamlit Web UI（推荐）](#streamlit-web-ui推荐)
+    - [监控与缓存](#监控与缓存)
+    - [输出示例](#输出示例)
+  - [项目结构](#项目结构)
+  - [开发指南](#开发指南)
+  - [测试](#测试)
+  - [部署（如适用）](#部署如适用)
+  - [路线图（可选）](#路线图可选)
+  - [贡献指南](#贡献指南)
+  - [许可证](#许可证)
+  - [维护者 / 联系方式](#维护者--联系方式)
+  - [实施过程说明（通俗版，聚焦 category-first RAG）](#实施过程说明通俗版聚焦-category-first-rag)
+    - [我们要解决什么问题？](#我们要解决什么问题)
+    - [为什么选 “category-first” 路线？](#为什么选-category-first-路线)
+    - [方案怎么做？](#方案怎么做)
 
 ---
 
 ## 功能特性
-- 一键处理 PPT：渲染 → 文本提取 → 单页总结 → 项目画像；RAG 文档生成改为手工（按 `docs/generate_rag_documents.md`）
-- RAG v2 QA-pair 方案：自动生成问答对、LLM 分类、多类型 chunk（qa_pair/topic/step/metrics/overview）
-- 向量检索与重排：M3E 中文 embedding + Chroma 向量库 + 相似度护栏（top_k/top_n/tau 可调）
-- 多种交互方式：
-  - CLI 批处理（PPT 解析）
-  - QA CLI 问答（命令行）
-  - **Streamlit Web UI**（可视化问答界面，支持项目选择、参数调节、引用展示、反馈收集）
-- 可切换 LLM 提供商，支持 `mock` 模式离线调试
-- 与 LibreOffice / Poppler 集成的可移植渲染链路
-- 监控与缓存：精确缓存（TTL 7 天）+ JSONL 日志记录
+- 端到端链路：PPT 渲染 → 文本抽取 → 单页总结 → 项目画像 → `rag_documents.json`，默认走**人工高质量生成**（见 `docs/generate_rag_documents.md`，以 category_summary + overview 为主）。
+- 可选自动化 RAG：开启 `auto_ragprep_enabled` 时，使用 LangGraph Map-Reduce 生成 category_summary/overview，复刻人工聚合口径；旧 QA 多 chunk 自动链路已退场。
+- RAG 形态：主力 chunk 为 `category_summary`（按类别聚合）+ `overview`；`qa_pair/metrics/topic/step` 作为兼容性附加项，可通过开关控制。
+- 向量检索与护栏：M3E 中文 embedding + Chroma + 相似度阈值（`top_k/top_n/tau` 可调），缺少高相似度时返回空。
+- 多入口：`python -m src` 主流程、`qa_cli` 问答（支持 guided 模式）、`vectordb_cli` 管理嵌入、**Streamlit Web UI**（项目选择、引用、反馈、引导式对话）。
+- 监控与缓存：QAMonitor 精确缓存（TTL 7 天，版本可控）+ JSONL 日志；命中时提示 `[cache hit/<level>]`。
+- 低耦合配置：LLM/embedding/vectordb/渲染工具均可替换，支持 `llm_provider=mock` 离线调试。
 
 ---
 
@@ -52,19 +62,20 @@
 - 核心组件：
   - `renderer/libreoffice.py`：PPTX → PDF → PNG 两步渲染
   - `extractor/ppt_extractor.py`：文本与 speaker notes 抽取
-  - `summarizer/`：单页总结 + 项目画像生成（LLM）
-  - `rag/`：QA 对生成 → LLM 分类 → 多类型 chunk 生成（RAG v2）
+  - `summarizer/`：单页总结 + 项目画像生成（LLM，支持 mock）
+  - `rag/map_reduce_graph.py`：LangGraph Map-Reduce，自动生成 category_summary + overview（仅在 `auto_ragprep_enabled=true` 时调用）
+  - `rag/chunk_generator.py`：QA 对、多类型 chunk 生成（兼容模式，可按开关使用）
   - `embeddings/m3e_model.py`：M3E 中文向量模型（768 维）
   - `vectordb/chroma_store.py`：Chroma 向量库封装 + 检索护栏
-  - `qa/qa_engine.py`：RAG 检索 + LLM 生成 + 监控/缓存
-  - `pipeline.py`：端到端编排
+  - `qa/qa_engine.py`：检索 + LLM 生成 + 监控/缓存；`qa/dialogue_orchestrator.py` 提供引导式对话
+  - `pipeline.py`：端到端编排（支持 refine 与分阶段强制重跑）
 - 接口层：
   - `python -m src`：PPT 解析主流程 CLI
-  - `src/scripts/qa_cli.py`：命令行问答
-  - `src/scripts/vectordb_cli.py`：向量库管理（导入/查询/统计/删除）
+  - `src/scripts/qa_cli.py`：命令行问答（`--guided` 触发引导式多轮）
+  - `src/scripts/vectordb_cli.py`：向量库管理（导入/批量导入/查询/统计/删除）
   - **`src/ui/streamlit_app.py`：Streamlit Web UI（可视化问答界面）**
-- 数据与存储：本地文件系统 + `chroma_db/` 向量库 + `logs/qa_sessions/` 日志
-- 扩展点：LLM 客户端、RAG 开关（enable_llm_classify/enable_*_chunks）、召回与重排参数、prompt 模板
+- 数据与存储：本地文件系统 + `chroma_db/` 向量库 + `logs/qa_sessions/` 日志 & 缓存
+- 扩展点：LLM 客户端、RAG 开关（自动/人工、chunk 类型）、召回与重排参数、guided 模板与提示词
 
 详见 `docs/` 下的实施方案与设计文档，以及各模块的 `AGENTS.md` / `CLAUDE.md`。
 
@@ -110,10 +121,12 @@ pdftoppm -h | head -n 1
   - `llm_provider` / `llm_model` / `llm_api_key` / `llm_base_url`：LLM 配置（支持 `mock` 模式）
   - `vectordb_enabled` / `vectordb_provider` / `vectordb_persist_dir`：向量库配置
   - `embedding_model` / `embedding_device`：M3E 模型与设备选择（cpu/cuda/mps）
-  - `auto_ragprep_enabled`：是否启用自动 RAG 文档生成，默认 `false`（改为人工生成 `rag_documents.json`，见 `docs/generate_rag_documents.md`）
-  - `enable_llm_classify` / `enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks`：RAG v2 功能开关
+  - `auto_ragprep_enabled`：默认 `false`，人工生成 `rag_documents.json`（按 `docs/generate_rag_documents.md`，侧重 category_summary+overview）；置 `true` 时启用 LangGraph Map-Reduce 自动生成。配套参数：`map_batch_size` / `map_max_categories_per_batch` / `reduce_target_categories` / `langgraph_max_concurrency` / `map_temperature` / `reduce_temperature`。
+  - Chunk 开关：`enable_category_summary_chunks`（默认 true）控制聚合 chunk；`enable_llm_classify` / `enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks` 为兼容性选项。
+  - QA 引导：`qa.guided.enabled` / `templates_path` / `gap_similarity_threshold` / `llm_prompt_path` 控制 guided 模式。
+  - 监控与缓存：`qa.cache.cache_ttl_days` / `cache_backend` / `vectordb_version`（统一失效缓存）；
   - `soffice_path` / `pdftoppm_path`：渲染工具路径（可选，默认从 PATH 查找）
-- CLI 可通过 `--config` 参数指定配置文件路径
+- CLI 可通过 `--config` 参数指定配置文件路径；`--no-vectordb` 可跳过入库，仅生成 embeddings。
 
 ---
 
@@ -124,21 +137,30 @@ pdftoppm -h | head -n 1
 # 基础用法
 python -m src --input ppts/ChatBI产品介绍_2025.pptx --output ppt_outputs/ChatBI产品介绍_2025
 
-# 强制重新运行（忽略缓存）
+# 强制重新运行（忽略 manifest）
 python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --force
 
-# 详细日志
-python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --verbose
+# 仅重跑渲染/抽取或摘要阶段
+python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --force-capture
+python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --force-interpret
+
+# 修复模式：仅重跑低置信度页面
+python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --refine --threshold 0.6 --pages "1,3,5"
+
+# 跳过入库，仅生成 embeddings 文件
+python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --no-vectordb
 ```
 
-> 当前默认关闭自动 RAG 生成。运行主流程后，会得到 `page_summaries/` 与画像；请按 `docs/generate_rag_documents.md` 用 Claude Code / Codex 手工生成 `embeddings/rag_documents.json`，再重跑 `python -m src`（会复用前面产物并执行向量入库），或使用 `src/scripts/vectordb_cli import` 直接导入。
+- 默认路径：运行后获得 `slides/`、`slide_texts.jsonl`、`page_summaries/`、`doc_summary/project_profile.json`。**RAG 默认走人工高质量路线**：按 `docs/generate_rag_documents.md` 产出以 category_summary+overview 为主的 `embeddings/rag_documents.json`，再重跑主流程（或用 `vectordb_cli import-docs`）写入向量库。
+- 自动 RAG（可选）：`config/settings.yaml` 中设 `auto_ragprep_enabled: true` 时，流水线会调用 LangGraph Map-Reduce 自动生成 category_summary/overview 并入库，适合批量/草稿。
+- 产物与错误均写入 `manifest.json`，可复用缓存避免重复计算。
 
 ### 向量库管理
 ```bash
 # 导入单个项目
-python -m src.scripts.vectordb_cli import --input ppt_outputs/ChatBI/embeddings/rag_documents.json
+python -m src.scripts.vectordb_cli import-docs --input ppt_outputs/ChatBI/embeddings/rag_documents.json
 
-# 批量导入所有项目
+# 批量导入所有项目（扫描 ppt_outputs/*/embeddings/rag_documents.json）
 python -m src.scripts.vectordb_cli batch-import --input-dir ppt_outputs
 
 # 查询向量库
@@ -146,6 +168,9 @@ python -m src.scripts.vectordb_cli query --text "ChatBI的核心功能" --top-k 
 
 # 查看统计信息
 python -m src.scripts.vectordb_cli stats
+
+# 列出项目
+python -m src.scripts.vectordb_cli list-projects
 
 # 删除项目
 python -m src.scripts.vectordb_cli delete --project ChatBI
@@ -161,6 +186,9 @@ python -m src.scripts.qa_cli -q "核心功能是什么" -p ChatBI --config confi
 
 # 自定义检索参数
 python -m src.scripts.qa_cli -q "架构设计" --top-k 8 --top-n 5 --tau 0.5
+
+# 引导式对话（澄清/追问建议）
+python -m src.scripts.qa_cli -q "数据落地怎么部署" --guided
 ```
 
 ### Streamlit Web UI（推荐）
@@ -179,7 +207,7 @@ streamlit run src/ui/streamlit_app.py --server.port 8501
 - 对话历史管理
 - 反馈收集（👍/👎/评论）
 - 可选：显示引用来源（调试用）
-- 可选：对话引导模式（澄清问题 + 追问建议）
+- 可选：对话引导模式（澄清问题 + 追问建议，复用 DialogueOrchestrator）
 
 **访问地址：** http://localhost:8501
 
@@ -192,9 +220,10 @@ streamlit run src/ui/streamlit_app.py --server.port 8501
 
 ### 输出示例
 - `slides/001.png`…：渲染图片
+- `slide_texts.jsonl`：每页抽取的原始文本
 - `page_summaries/001.json`…：单页总结
 - `doc_summary/project_profile.json`：聚合画像
-- `embeddings/rag_documents.json`：RAG 文档（包含 qa_pair/topic/step/metrics/overview 多种 chunk）
+- `embeddings/rag_documents.json`：RAG 文档（默认以 category_summary + overview 为主，兼容 qa_pair/metrics 等）
 - `manifest.json`：元数据与错误记录
 
 ---
@@ -207,6 +236,7 @@ streamlit run src/ui/streamlit_app.py --server.port 8501
 ├─ppt_outputs/              # 渲染与总结产物（构建输出）
 │  └─<project>/
 │     ├─slides/             # PNG 渲染图片
+│     ├─slide_texts.jsonl   # 抽取后的原始文本
 │     ├─page_summaries/     # 单页总结 JSON
 │     ├─doc_summary/        # 项目画像 JSON
 │     ├─embeddings/         # RAG 文档（rag_documents.json）
@@ -216,7 +246,7 @@ streamlit run src/ui/streamlit_app.py --server.port 8501
 │  ├─extractor/             # 文本与 speaker notes 抽取
 │  ├─summarizer/            # 单页总结 + 项目画像生成（LLM）
 │  ├─prompts/               # 统一 Prompt 管理
-│  ├─rag/                   # RAG v2：QA 对生成 + LLM 分类 + 多类型 chunk
+│  ├─rag/                   # RAG 生成：QA 对/多 chunk + LangGraph Map-Reduce 自动聚合
 │  ├─embeddings/            # M3E 向量模型封装
 │  ├─vectordb/              # Chroma 向量库封装 + 检索护栏
 │  ├─qa/                    # QA 引擎 + 监控/缓存
@@ -233,6 +263,7 @@ streamlit run src/ui/streamlit_app.py --server.port 8501
 ├─chroma_db/                # Chroma 向量库持久化目录
 ├─logs/                     # 日志与缓存
 │  └─qa_sessions/           # QA 日志与精确缓存（JSONL）
+├─snapshots/                # 手工截图/验收记录（可选）
 └─venv/                     # 本地虚拟环境（可选）
 ```
 
@@ -251,12 +282,13 @@ pytest tests/ -v
 
 # 运行特定测试文件
 pytest tests/test_pipeline_e2e.py -v
+pytest tests/test_dialogue_orchestrator.py -v   # 引导式对话逻辑
 
 # 带覆盖率报告
 pytest tests/ --cov=src --cov-report=html
 ```
 > 若缺少 LibreOffice/Poppler 或未配置 LLM，相关测试会自动跳过；可设置 `llm_provider: mock` 以离线运行。
-> Embedding 回归测试：`tests/tmp_run_tests.py` 生成 `tests/tmp_embedding_test_round1.json` 供对比。
+> Embedding 回归测试：`tests/tmp_run_tests.py` 生成 `tests/tmp_embedding_test_round1.json` 供对比。`src/scripts/qa_eval_llm.py` 可对 `tests/qa_test_results/qa_test_*.json` 进行 LLM 自评。
 
 ---
 
@@ -295,49 +327,30 @@ pytest tests/ --cov=src --cov-report=html
 
 ---
 
-## 实施过程说明（通俗版，聚焦 RAG v2）
+## 实施过程说明（通俗版，聚焦 category-first RAG）
 
-### 整体思路
-从第一性原理出发，我们先把 PPT 拆成最小可验证的链路：渲染出图片、提取文本、做单页总结，再聚合成项目画像。所有这些中间结果最终落到一份统一的 RAG 嵌入文档 `embeddings/rag_documents.json`，这样后续检索和问答都不必重复解析 PPT。
+### 我们要解决什么问题？
+项目介绍类 PPT 往往信息密、结构散、样式不统一。直接把整份 PPT 丢给大模型要么超上下文，要么得到碎片化、不可追溯的答案。目标是把 PPT 里的知识沉淀成可检索、可追溯的 RAG 资产，既能回答「核心功能是什么？」这种高频问题，又能稳定支撑多项目、低成本的内网部署。
 
-### RAG v2：QA-Pair 方案
-不同于 v1 的单 chunk 方案，v2 采用 QA-pair 为中心的多类型 chunk 生成策略：
+### 为什么选 “category-first” 路线？
+1) **可追溯且抗碎片**：先做单页总结，再按主题类别聚合生成category_summary，每条都带来源 slide refs。相比逐页 QA，类别级聚合减少重复和噪声。  
+2) **上下文可控**：类别数量可控（~6–12），文本长度稳定，向量库更干净，检索时不用在一堆近似重复的 QA 里重排。  
+3) **人工与自动双轨**：人工路径保证质量（默认）；需要批处理时开启 LangGraph Map-Reduce 自动产草稿，再人工抽检，成本/效率平衡。  
+4) **兼容旧策略**：保留 QA 多 chunk 开关，方便回归或特殊场景，不破坏现有数据。
 
-1. **QA 对生成**：每页 PageSummary 生成 5-10 个自然问答对，包含问题、答案、替代问法、关键词
-2. **LLM 批量分类**：8-10 个 QA 对一次性分类到 8 个类别（positioning/features/architecture/deployment/integration/cases/comparison/roadmap）
-3. **多类型 Chunk**：
-   - `qa_pair`（主力）：问答对 + 替代问法 + 关键词，适合精确匹配
-   - `topic`（可选）：主题块，适合长文本回答
-   - `step`（可选）：流程步骤，适合操作指南
-   - `metrics`（可选）：性能数据，适合数据查询
-   - `overview`（项目级）：聚合画像，适合全局问题
+### 方案怎么做？
+1) **可验证链路拆解**：渲染 → 文本抽取 → 单页总结 → 项目画像。任何一步都写 manifest，便于复跑与定位问题。  
+2) **类别聚合（人工主路径）**：阅读 `page_summaries/*.json`，按固定提示词把同类 slide 聚合成 `category_summary`（摘要 + 3–5 QA + 来源引用）和项目级 `overview`，落盘 `embeddings/rag_documents.json`。  
+3) **自动 Map-Reduce（可选，LangGraph）**：`auto_ragprep_enabled=true` 时走并行 Map-Reduce，产物与人工格式一致（category_summary + overview）：  
+   - **批切分**：按 `map_batch_size`（默认 10 页）把 `page_summaries` 分批，控制上下文。  
+   - **Map**：每批调用 LLM 产出 3–6 个“局部类别”，每类含 100–150 字摘要、可选 1–2 QA、`source_slide_refs`；温度 `map_temperature`（默认 0.2）。  
+   - **Merge**：收集全部局部类别，按名称/语义合并，相似度高的合并，目标总类数受 `reduce_target_categories`（默认 10）约束。  
+   - **Reduce**：对合并后的每个全局类别再次调用 LLM，生成 200–300 字 `category_summary` + 3–5 QA，引用去重升序；温度 `reduce_temperature`（默认 0.2）。  
+   - **Overview**：基于所有 category_summary 摘要生成 150–200 字项目级 overview。  
+   - **并发与兜底**：Map/Reduce 节点受 `langgraph_max_concurrency` 控制；LLM 失败会退回启发式汇总并记录到 manifest。  
+   - **输出校验**：结构、长度、来源引用校验后落盘 `embeddings/rag_documents.json`，失败项记录在 manifest.errors。  
+4) **向量化与护栏**：用 `moka-ai/m3e-base` 本地批量编码（自动 CPU/CUDA/MPS），metadata 保留 project/slide/level/chunk_type/category_id/confidence，低相似度直接返回空，避免幻觉。  
+5) **检索与回答**：`ChromaStore.query_with_guardrails(..., tau=0.5, top_k=8, top_n=5)`，可按项目过滤、细节页加权，QAEngine 统一封装，CLI/UI 直接复用。  
+6) **监控与缓存**：QAMonitor 写精确缓存与日志（TTL 7 天，`vectordb_version` 可一键失效），命中时提示 `[cache hit/<level>]`，便于灰度与回溯。
 
-4. **成本优化**：批量分类相比逐条分类节省 80% token 成本
-5. **功能开关**：`enable_llm_classify` / `enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks` 可按需启用/关闭
 
-### Embedding 与向量化
-- **文本准备**：轻量清洗、去空字段、解包嵌套 JSON，按语义段落拼接，保持上下文完整
-- **批量向量化**：使用 `moka-ai/m3e-base`（768 维）本地推理，自动选择 CPU/CUDA/MPS，OOM 时自动降低 batch
-- **选择 M3E 的原因**：中文语义效果稳定、模型体量适中（可本地离线）、社区基准表现良好；相比英文化模型，中文召回与断句更可靠；开源许可便于内网部署
-- **向量库集成**：向量生成后写入 Chroma，metadata 保留 `project_name/slide_no/page_type/chunk_type/category_id/level/confidence` 等字段，便于后续过滤与重排
-- **结果记录**：Embedding 与插入耗时、成功/失败数写入 manifest，便于回溯
-
-### 检索与重排
-- **包装函数**：`ChromaStore.query_with_guardrails(text, project_name=None, where=None, top_k=8, top_n=5, tau=0.5)`（src/vectordb/chroma_store.py）
-- **项目过滤**：若未传 where，单项目场景自动过滤；多项目可传 `project_name` 或自定义 `where`
-- **召回与重排**：`top_k=8` 召回 → 相似度 + 细节页/slide 加分 → 取前 5
-- **阈值护栏**：Top-1 相似度 `< 0.5` 返回空列表（由上层决定"未找到相关内容"的文案）
-- **QA-aware 检索**：`query_with_qa_ranking` 支持问题相似度加权，提升问答匹配精度
-- **测试回归**：`tests/tmp_run_tests.py` 直接调用包装函数，输出 `tests/tmp_embedding_test_round1.json` 供对比调参效果
-
-### 监控与缓存
-- **QAMonitor**：`qa_cli` 默认启用，命中缓存会在答案前打印 `[cache hit/<level>]`
-- **精确缓存**：基于问题文本的精确匹配，TTL=7 天，可用 `qa.cache.vectordb_version` 统一失效
-- **日志记录**：日志与缓存写入 `logs/qa_sessions/qa_logs_YYYYMMDD.jsonl` / `qa_cache.jsonl`（按日滚动）
-- **语义缓存已下线**：仅保留精确缓存，避免误命中
-
-### 持续改进方向
-- 建立自动化的嵌入质量基线与回归测试
-- 继续优化 QA 对生成质量与分类准确率
-- 补齐 Docker/一键安装、任务队列和可视化看板
-- 扩充异常 PPT 样本，完善解包和告警回退，提升鲁棒性  

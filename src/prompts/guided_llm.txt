@@ -4,7 +4,7 @@
 - question: {question}
 - filled_slots: {filled_slots}
 - recent_suggestions: {recent_suggestions}
-- module_hit: {module_hit}
+- module_hit: {module_hit}  // 命中的页面类型或分类线索
 
 输出 JSON：
 {
@@ -14,6 +14,15 @@
 }
 
 规则：
+- follow_ups 必须围绕以下 Category 之一（与 RAG 文档分类一致，括号内为含义）：  
+  - product_overview（产品定位、目标用户、核心价值）  
+  - architecture（总体架构、部署形态、集成方式）  
+  - core_features（关键功能与能力清单）  
+  - analytics_capability（数据分析/BI/可视化能力与限制）  
+  - security_and_governance（安全、权限、合规、审计）  
+  - use_cases（典型落地场景与案例）  
+  - roadmap_or_future（版本规划、在研能力）  
+ 依据 module_hit 优先选择；若无命中则选 product_overview 或 core_features。
 - 不要重复 filled_slots 中已有的槽位
 - 不要重复 recent_suggestions 中的建议
 - 口吻简洁，避免表情和第一人称
