@@ -32,6 +32,7 @@ class LLMClient:
                 model=self.settings.llm_model,
                 temperature=self.settings.llm_temperature,
                 base_url=self.settings.llm_base_url,
+                timeout=self.settings.llm_timeout,
             )
 
         if self.provider == "anthropic":
@@ -43,6 +44,7 @@ class LLMClient:
                 api_key=self.settings.llm_api_key,
                 model=self.settings.llm_model,
                 temperature=self.settings.llm_temperature,
+                timeout=self.settings.llm_timeout,
             )
 
         raise ValueError(f"Unsupported LLM provider: {self.provider}")

@@ -35,6 +35,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+ORCHESTRATOR_VERSION = "2026-01-06-4"
+
 
 def init_session_state():
     """Initialize Streamlit session state"""
@@ -79,15 +81,27 @@ def init_session_state():
         st.session_state.settings = settings
         st.session_state.llm_client = llm_client
 
-    if "orchestrator" not in st.session_state:
+    need_new_orch = (
+        "orchestrator" not in st.session_state
+        or st.session_state.get("orchestrator_version") != ORCHESTRATOR_VERSION
+    )
+    if need_new_orch:
         # Templates are optional; fall back to defaults if missing
         templates = get_guided_templates(getattr(st.session_state.settings.qa.guided, "templates_path", None))
-        st.session_state.orchestrator = DialogueOrchestrator(
-            qa_engine=st.session_state.qa_engine,
-            templates=templates,
-            llm_client=st.session_state.llm_client,
-            gap_threshold=getattr(st.session_state.settings.qa.guided, "gap_similarity_threshold", 0.5),
-        )
+        orch_kwargs = {
+            "qa_engine": st.session_state.qa_engine,
+            "templates": templates,
+            "llm_client": st.session_state.llm_client,
+            "gap_threshold": getattr(st.session_state.settings.qa.guided, "gap_similarity_threshold", 0.5),
+            "llm_prompt_path": getattr(st.session_state.settings.qa.guided, "llm_prompt_path", None),
+        }
+        try:
+            st.session_state.orchestrator = DialogueOrchestrator(**orch_kwargs)
+        except TypeError:
+            # 向后兼容旧构造签名：去掉 llm_prompt_path 再试
+            orch_kwargs.pop("llm_prompt_path", None)
+            st.session_state.orchestrator = DialogueOrchestrator(**orch_kwargs)
+        st.session_state.orchestrator_version = ORCHESTRATOR_VERSION
 
 
 def get_available_projects() -> List[str]:
@@ -152,38 +166,39 @@ def render_sidebar():
 
     if selected_project == "全部项目":
         st.session_state.current_project = None
+        if "dialogue_state" in st.session_state:
+            st.session_state.dialogue_state.slots.pop("project_name", None)
     else:
         st.session_state.current_project = selected_project
+        # 将侧边栏选择同步到对话槽位，避免重复澄清
+        if "dialogue_state" in st.session_state:
+            st.session_state.dialogue_state.slots["project_name"] = selected_project
 
-    # Parameters
-    st.sidebar.subheader("检索参数")
-
-    top_k = st.sidebar.slider(
-        "Top-K (召回数量)",
-        min_value=3,
-        max_value=20,
-        value=st.session_state.qa_params["top_k"],
-        help="向量检索召回的文档数量"
-    )
-
-    top_n = st.sidebar.slider(
-        "Top-N (重排后数量)",
-        min_value=1,
-        max_value=10,
-        value=st.session_state.qa_params["top_n"],
-        help="重排后保留的文档数量"
-    )
-
-    tau = st.sidebar.slider(
-        "相似度阈值 (τ)",
-        min_value=0.0,
-        max_value=1.0,
-        value=st.session_state.qa_params["tau"],
-        step=0.05,
-        help="最低相似度阈值，低于此值的结果会被过滤"
-    )
-
-    st.session_state.qa_params = {"top_k": top_k, "top_n": top_n, "tau": tau}
+    # Parameters (隐藏 UI，保留代码便于恢复；默认值来自 init_session_state)
+    # st.sidebar.subheader("检索参数")
+    # top_k = st.sidebar.slider(
+    #     "Top-K (召回数量)",
+    #     min_value=3,
+    #     max_value=20,
+    #     value=st.session_state.qa_params["top_k"],
+    #     help="向量检索召回的文档数量"
+    # )
+    # top_n = st.sidebar.slider(
+    #     "Top-N (重排后数量)",
+    #     min_value=1,
+    #     max_value=10,
+    #     value=st.session_state.qa_params["top_n"],
+    #     help="重排后保留的文档数量"
+    # )
+    # tau = st.sidebar.slider(
+    #     "相似度阈值 (τ)",
+    #     min_value=0.0,
+    #     max_value=1.0,
+    #     value=st.session_state.qa_params["tau"],
+    #     step=0.05,
+    #     help="最低相似度阈值，低于此值的结果会被过滤"
+    # )
+    # st.session_state.qa_params = {"top_k": top_k, "top_n": top_n, "tau": tau}
 
     # Dialogue orchestrator toggle
     st.sidebar.subheader("对话模式")
@@ -194,14 +209,14 @@ def render_sidebar():
     )
     st.session_state.use_orchestrator = use_orchestrator
 
-    # Display options
-    st.sidebar.subheader("显示选项")
-    show_sources = st.sidebar.checkbox(
-        "显示引用来源",
-        value=False,
-        help="显示答案的来源页码和相似度（调试用）"
-    )
-    st.session_state.show_sources = show_sources
+    # Display options（隐藏 UI，保留代码便于恢复；保持 show_sources=False）
+    # st.sidebar.subheader("显示选项")
+    # show_sources = st.sidebar.checkbox(
+    #     "显示引用来源",
+    #     value=False,
+    #     help="显示答案的来源页码和相似度（调试用）"
+    # )
+    st.session_state.show_sources = False
 
     # Clear session button
     st.sidebar.subheader("会话管理")
@@ -235,34 +250,34 @@ def render_sources(sources: List[Dict[str, Any]]):
                 st.metric("相似度", f"{similarity:.2%}")
 
 
-def render_feedback_buttons(question: str, answer: str, project: str, msg_idx: int):
-    """Render feedback buttons for a Q&A pair"""
-    col1, col2, col3 = st.columns([1, 1, 8])
+# def render_feedback_buttons(question: str, answer: str, project: str, msg_idx: int):
+#     """Render feedback buttons for a Q&A pair"""
+#     col1, col2, col3 = st.columns([1, 1, 8])
 
-    with col1:
-        if st.button("👍", key=f"thumbs_up_{msg_idx}"):
-            save_feedback(question, answer, project or "全部", 1)
-            st.success("感谢反馈！")
+#     with col1:
+#         if st.button("👍", key=f"thumbs_up_{msg_idx}"):
+#             save_feedback(question, answer, project or "全部", 1)
+#             st.success("感谢反馈！")
 
-    with col2:
-        if st.button("👎", key=f"thumbs_down_{msg_idx}"):
-            save_feedback(question, answer, project or "全部", -1)
-            st.warning("已记录，我们会改进")
+#     with col2:
+#         if st.button("👎", key=f"thumbs_down_{msg_idx}"):
+#             save_feedback(question, answer, project or "全部", -1)
+#             st.warning("已记录，我们会改进")
 
-    # Optional comment
-    with st.expander("💬 添加评论"):
-        comment = st.text_area(
-            "详细反馈",
-            key=f"comment_{msg_idx}",
-            placeholder="请描述问题或建议..."
-        )
-        if st.button("提交评论", key=f"submit_comment_{msg_idx}"):
-            if comment.strip():
-                save_feedback(question, answer, project or "全部", 0, comment)
-                st.success("评论已提交！")
+#     # Optional comment
+#     with st.expander("💬 添加评论"):
+#         comment = st.text_area(
+#             "详细反馈",
+#             key=f"comment_{msg_idx}",
+#             placeholder="请描述问题或建议..."
+#         )
+#         if st.button("提交评论", key=f"submit_comment_{msg_idx}"):
+#             if comment.strip():
+#                 save_feedback(question, answer, project or "全部", 0, comment)
+#                 st.success("评论已提交！")
 
 
-def render_suggestions(suggestions: List[str]):
+def render_suggestions(suggestions: List[str], key_prefix: str = ""):
     """Render follow-up suggestions as clickable chips"""
     if not suggestions:
         return
@@ -272,24 +287,36 @@ def render_suggestions(suggestions: List[str]):
     cols = st.columns(min(len(suggestions), 3))
     for idx, suggestion in enumerate(suggestions):
         with cols[idx % 3]:
-            if st.button(suggestion, key=f"suggestion_{idx}", use_container_width=True):
-                st.session_state.next_question = suggestion
-                st.rerun()
+            suffix = f"{key_prefix}_{idx}" if key_prefix else f"{idx}"
+            if st.button(suggestion, key=f"suggestion_{suffix}", use_container_width=True):
+                # 单击即发问：写入 pending_suggestion 并强制 rerun
+                st.session_state.pending_suggestion = suggestion
+                # Streamlit 1.28+ 使用 st.rerun，旧版使用 experimental_rerun
+                if hasattr(st, "rerun"):
+                    st.rerun()
+                else:
+                    st.experimental_rerun()
 
 
-def render_clarification(slot_candidates: Dict[str, List[str]]):
+def render_clarification(slot_candidates: Dict[str, List[str]], original_question: str):
     """Render clarification interface for slot filling"""
     st.info("🤔 需要澄清以下信息：")
+    nonce = st.session_state.get("clarify_nonce", 0)
 
     for slot_name, candidates in slot_candidates.items():
         st.markdown(f"**{slot_name}**:")
         cols = st.columns(min(len(candidates), 4))
         for idx, candidate in enumerate(candidates):
             with cols[idx % 4]:
-                if st.button(candidate, key=f"slot_{slot_name}_{idx}", use_container_width=True):
+                key = f"slot_{slot_name}_{idx}_{nonce}"
+                nonce += 1
+                if st.button(candidate, key=key, use_container_width=True):
                     # Fill the slot and rerun
                     st.session_state.dialogue_state.slots[slot_name] = candidate
+                    # 自动重问上一个问题，带上新槽位
+                    st.session_state.next_question = original_question
                     st.rerun()
+    st.session_state.clarify_nonce = nonce
 
 
 def main():
@@ -308,7 +335,69 @@ def main():
         st.code("python -m src --input ppts/<file>.pptx --output ppt_outputs/<name>")
         return
 
-    # Display conversation history
+    # Pending suggestion click -> auto-fill question
+    pending_prompt = st.session_state.pop("pending_suggestion", None)
+    override_prompt = st.session_state.pop("prompt_override", None)
+    pending = st.session_state.pop("next_question", None)
+    prompt = pending_prompt or override_prompt or pending or st.chat_input("请输入您的问题...")
+
+    # If we already have a prompt (来自建议/澄清/输入框)，先处理问答，再统一渲染历史，避免需要二次点击
+    new_entry = None
+    if prompt:
+        with st.spinner("正在思考..."):
+            try:
+                if st.session_state.use_orchestrator:
+                    # 同步侧边栏项目到槽位（以防外部修改）
+                    if st.session_state.current_project is not None:
+                        st.session_state.dialogue_state.slots["project_name"] = st.session_state.current_project
+
+                    kwargs = {
+                        "state": st.session_state.dialogue_state,
+                        "project_name": st.session_state.current_project,
+                        "allow_all_projects": st.session_state.current_project is None,
+                        "top_k": st.session_state.qa_params["top_k"],
+                        "top_n": st.session_state.qa_params["top_n"],
+                        "tau": st.session_state.qa_params["tau"],
+                    }
+
+                    try:
+                        result = st.session_state.orchestrator.answer_with_guidance(prompt, **kwargs)
+                    except TypeError as exc:
+                        if "project_name" in str(exc):
+                            kwargs.pop("project_name", None)
+                            result = st.session_state.orchestrator.answer_with_guidance(prompt, **kwargs)
+                        elif "allow_all_projects" in str(exc):
+                            kwargs.pop("allow_all_projects", None)
+                            result = st.session_state.orchestrator.answer_with_guidance(prompt, **kwargs)
+                        else:
+                            raise
+                else:
+                    result = st.session_state.qa_engine.answer(
+                        question=prompt,
+                        project_name=st.session_state.current_project,
+                        **st.session_state.qa_params
+                    )
+
+                new_entry = {
+                    "question": prompt,
+                    "answer": result["answer"],
+                    "sources": result.get("sources", []),
+                    "status": result["status"],
+                    "cache_status": result.get("cache_status"),
+                    "cache_level": result.get("cache_level"),
+                    "suggestions": result.get("suggestions", []),
+                    "slot_candidates": result.get("slot_candidates", {}),
+                    "project": st.session_state.current_project,
+                    "timestamp": datetime.now().isoformat()
+                }
+                st.session_state.conversation_history.append(new_entry)
+
+            except Exception as e:
+                st.error(f"❌ 系统错误: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+
+    # Display conversation history（包含本轮新记录）
     for idx, msg in enumerate(st.session_state.conversation_history):
         # User question
         with st.chat_message("user"):
@@ -328,95 +417,15 @@ def main():
 
             # Show suggestions if available
             if msg.get("suggestions"):
-                render_suggestions(msg["suggestions"])
+                render_suggestions(msg["suggestions"], key_prefix=f"history_{idx}")
 
-            # Feedback buttons
-            render_feedback_buttons(
-                msg["question"],
-                msg["answer"],
-                msg.get("project", "全部"),
-                idx
-            )
-
-    # Handle clarification mode
-    if (st.session_state.use_orchestrator and
-        st.session_state.conversation_history and
-        st.session_state.conversation_history[-1].get("status") == "clarify"):
-
-        last_msg = st.session_state.conversation_history[-1]
-        if last_msg.get("slot_candidates"):
-            render_clarification(last_msg["slot_candidates"])
-
-    # Chat input
-    if prompt := st.chat_input("请输入您的问题..."):
-        # Display user message
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # Get answer
-        with st.chat_message("assistant"):
-            with st.spinner("正在思考..."):
-                try:
-                    if st.session_state.use_orchestrator:
-                        # Use DialogueOrchestrator
-                        result = st.session_state.orchestrator.answer_with_guidance(
-                            prompt,
-                            state=st.session_state.dialogue_state
-                        )
-                    else:
-                        # Use QAEngine directly
-                        result = st.session_state.qa_engine.answer(
-                            question=prompt,
-                            project_name=st.session_state.current_project,
-                            **st.session_state.qa_params
-                        )
-
-                    # Display answer
-                    if result["status"] == "success":
-                        st.markdown(result["answer"])
-
-                        # Show cache status
-                        if result.get("cache_status") == "hit":
-                            st.caption(f"⚡ 缓存命中 ({result.get('cache_level', 'unknown')})")
-
-                        # Show sources (only if enabled)
-                        if result.get("sources") and st.session_state.get("show_sources", False):
-                            render_sources(result["sources"])
-
-                        # Show suggestions
-                        if result.get("suggestions"):
-                            render_suggestions(result["suggestions"])
-
-                    elif result["status"] == "clarify":
-                        st.info(result["answer"])
-                        if result.get("slot_candidates"):
-                            render_clarification(result["slot_candidates"])
-
-                    elif result["status"] == "no_context":
-                        st.warning("⚠️ 未找到相关内容，请尝试换个问法或选择其他项目")
-
-                    else:  # error
-                        st.error(f"❌ 出错了: {result.get('error', '未知错误')}")
-
-                    # Save to conversation history
-                    history_entry = {
-                        "question": prompt,
-                        "answer": result["answer"],
-                        "sources": result.get("sources", []),
-                        "status": result["status"],
-                        "cache_status": result.get("cache_status"),
-                        "cache_level": result.get("cache_level"),
-                        "suggestions": result.get("suggestions", []),
-                        "slot_candidates": result.get("slot_candidates", {}),
-                        "project": st.session_state.current_project,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    st.session_state.conversation_history.append(history_entry)
-
-                except Exception as e:
-                    st.error(f"❌ 系统错误: {str(e)}")
-                    import traceback
-                    st.code(traceback.format_exc())
+            # Feedback buttons (hidden by default; toggle here if needed)
+            # render_feedback_buttons(
+            #     msg["question"],
+            #     msg["answer"],
+            #     msg.get("project", "全部"),
+            #     idx
+            # )
 
 
 if __name__ == "__main__":

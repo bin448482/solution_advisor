@@ -34,6 +34,8 @@ class DialogueState:
     question_enriched: str = ""
     fallback_used: bool = False
     graph_attempt: int = 1
+    retrieval_params: Dict[str, Any] = field(default_factory=dict)
+    allow_all_projects: bool = False
 
 
 class DialogueOrchestrator:
@@ -45,11 +47,14 @@ class DialogueOrchestrator:
         templates: Dict[str, Any],
         llm_client: Optional[Any] = None,
         gap_threshold: float = 0.5,
+        llm_prompt_path: Optional[str] = None,
+        **kwargs: Any,
     ):
         self.qa_engine = qa_engine
         self.templates = templates or {}
         self.llm = llm_client  # 阶段 3：用于生成追问/澄清
         self.gap_threshold = gap_threshold
+        self.llm_prompt_path = Path(llm_prompt_path).resolve() if llm_prompt_path else None
         self.graph = self.build_graph() if StateGraph else None
         self.llm_prompt = self._load_llm_prompt()
 
@@ -67,13 +72,14 @@ class DialogueOrchestrator:
 
     def retrieve_node(self, state: DialogueState) -> DialogueState:
         project_name = state.slots.get("project_name")
+        params = state.retrieval_params or {"top_k": 8, "top_n": 5, "tau": 0.5}
         question = state.question_enriched or state.question_raw
         result = self.qa_engine.answer(
             question=question,
             project_name=project_name,
-            top_k=8,
-            top_n=5,
-            tau=0.5,
+            top_k=params.get("top_k", 8),
+            top_n=params.get("top_n", 5),
+            tau=params.get("tau", 0.5),
         )
         state.last_result = result
         state.last_phase = "retrieve"
@@ -104,13 +110,28 @@ class DialogueOrchestrator:
         return state
 
     # ---- 公共方法 ----
-    def answer_with_guidance(self, question: str, state: Optional[DialogueState] = None) -> Dict[str, Any]:
+    def answer_with_guidance(
+        self,
+        question: str,
+        state: Optional[DialogueState] = None,
+        *,
+        project_name: Optional[str] = None,
+        top_k: int = 8,
+        top_n: int = 5,
+        tau: float = 0.5,
+        allow_all_projects: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         """对外单轮接口：输入问题，返回带引导建议的结果。"""
         state = state or DialogueState()
         state.question_raw = question
         state.fallback_used = False  # reset per turn
+        state.retrieval_params = {"top_k": top_k, "top_n": top_n, "tau": tau}
+        state.allow_all_projects = state.allow_all_projects or allow_all_projects
+        if project_name is not None:
+            state.slots["project_name"] = project_name
 
-        clarify = self.clarify_if_needed(question, state)
+        clarify = self.clarify_if_needed(question, state, allow_all_projects=state.allow_all_projects)
         if clarify.get("needs_clarify"):
             result = {
                 "answer": clarify.get("clarify_text", "请补充项目名称"),
@@ -126,12 +147,27 @@ class DialogueOrchestrator:
 
         state.question_enriched = self.enrich_query(question, state.slots)
 
-        if self.graph:
-            state = self.graph.invoke(state)
-        else:  # 无 LangGraph 时的降级顺序
-            state = self.retrieve_node(state)
-            next_step = self.route_after_retrieve(state)
-            state = self.gap_prompt_node(state) if next_step == "gap_prompt" else self.follow_up_node(state)
+        try:
+            if self.graph:
+                state = self.graph.invoke(state)
+            else:  # 无 LangGraph 时的降级顺序
+                state = self.retrieve_node(state)
+                next_step = self.route_after_retrieve(state)
+                state = self.gap_prompt_node(state) if next_step == "gap_prompt" else self.follow_up_node(state)
+        except Exception as exc:
+            state.fallback_used = True
+            fallback = self.qa_engine.answer(
+                question=state.question_enriched or state.question_raw,
+                project_name=state.slots.get("project_name"),
+                top_k=top_k,
+                top_n=top_n,
+                tau=tau,
+            )
+            fallback["status"] = fallback.get("status", "success")
+            fallback["dialogue_phase"] = "fallback"
+            fallback["error"] = str(exc)
+            state.last_result = fallback
+            state.last_phase = "fallback"
 
         self._log_dialogue_metrics(state)
         return state.last_result
@@ -141,17 +177,19 @@ class DialogueOrchestrator:
         sims = [s.get("similarity") for s in sources if s.get("similarity") is not None]
         return max(sims) if sims else 0.0
 
-    @staticmethod
-    def _load_llm_prompt() -> Optional[str]:
-        prompt_path = Path(__file__).resolve().parent.parent / "prompts" / "guided_llm.txt"
-        if prompt_path.exists():
-            return prompt_path.read_text(encoding="utf-8")
+    def _load_llm_prompt(self) -> Optional[str]:
+        prompt_path = (
+            self.llm_prompt_path
+            or Path(__file__).resolve().parent.parent / "prompts" / "guided_llm.txt"
+        )
+        if prompt_path and Path(prompt_path).exists():
+            return Path(prompt_path).read_text(encoding="utf-8")
         return None
 
     # ---- 槽位澄清（阶段 2） ----
-    def clarify_if_needed(self, question: str, state: DialogueState) -> Dict[str, Any]:
+    def clarify_if_needed(self, question: str, state: DialogueState, allow_all_projects: bool = False) -> Dict[str, Any]:
         """缺项目名时返回澄清信息；若问题中含项目则直接填充。"""
-        if state.slots.get("project_name"):
+        if state.slots.get("project_name") or allow_all_projects:
             return {"needs_clarify": False}
 
         detected = self._detect_project_in_question(question)
@@ -195,19 +233,26 @@ class DialogueOrchestrator:
         return None
 
     def _list_available_projects(self) -> List[str]:
+        projects: List[str] = []
         try:
             store = getattr(self.qa_engine, "store", None)
             if store and hasattr(store, "list_projects"):
-                return store.list_projects()
+                projects.extend(store.list_projects())
         except Exception:
-            return []
-        return []
+            pass
+        # 与 UI 同源：扫描 ppt_outputs 下已生成向量的项目
+        ppt_outputs = Path("ppt_outputs")
+        if ppt_outputs.exists():
+            for item in ppt_outputs.iterdir():
+                if item.is_dir() and (item / "embeddings" / "rag_documents.json").exists():
+                    projects.append(item.name)
+        # 去重并排序
+        return sorted({p for p in projects if p})
 
     def _generate_gap_prompts(self, state: DialogueState) -> List[str]:
         prompts = list(self.templates.get("gap_prompts", [])) or [
-            "要不要告诉我项目名称？",
-            "您关注哪个阶段？立项/实施/收尾",
-            "想了解功能、架构还是部署？",
+            "请先选定要问的项目名称",
+            "想了解功能还是部署/案例？",
         ]
         # 已填槽位的提示做简单过滤
         if state.slots.get("project_name"):
@@ -314,7 +359,8 @@ class DialogueOrchestrator:
         for s in filtered:
             state.suggestion_cooldown[s] = 2
         state.recent_suggestions = (filtered + state.recent_suggestions)[:10]
-        return filtered[:3]
+        # 限制前端展示数量，避免“选项过载”
+        return filtered[:2]
 
     @staticmethod
     def _is_semantically_similar(text: str, corpus: List[str], threshold: float = 0.9) -> bool:

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -9,9 +10,12 @@ class DummyQAEngine:
     def __init__(self, result):
         self.result = result
         self.last_question = None
+        self.monitor = None
+        self.call_count = 0
 
     def answer(self, question: str, project_name=None, top_k=0, top_n=0, tau=0.0):
         self.last_question = question
+        self.call_count += 1
         return self.result
 
     @property
@@ -110,3 +114,105 @@ def test_semantic_similarity_blocks_repeated():
     assert "了解部署方式吗" not in res["suggestions"]  # 语义重复被阻断
     assert "新的建议" in res["suggestions"]
     assert state.repeat_blocked_count >= 1
+
+
+def test_allow_all_projects_skips_clarify_and_keeps_raw_question():
+    qa = DummyQAEngine({"status": "success", "sources": [], "answer": ""})
+    orch = DialogueOrchestrator(qa_engine=qa, templates={}, gap_threshold=0.1)
+    res = orch.answer_with_guidance("部署方式", DialogueState(), allow_all_projects=True)
+    assert res.get("status") == "success"
+    assert qa.last_question == "部署方式"  # 未被强制拼槽位
+    assert res.get("dialogue_phase") in {"follow_up", "gap_prompt"}
+
+
+def test_fallback_path_when_retrieval_raises():
+    class FlakyQA:
+        def __init__(self):
+            self.calls = 0
+
+        def answer(self, *_, **__):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("boom")
+            return {"status": "success", "sources": [], "answer": "ok"}
+
+    qa = FlakyQA()
+    orch = DialogueOrchestrator(qa_engine=qa, templates={}, gap_threshold=0.1)
+    res = orch.answer_with_guidance("hi", DialogueState(slots={"project_name": "ChatBI"}))
+    assert res["dialogue_phase"] == "fallback"
+    assert res["status"] == "success"
+    assert "error" in res
+    assert qa.calls == 2  # 一次失败一次兜底
+
+
+def test_cooldown_allows_suggestion_after_expiry():
+    sources = [{"page_type": ["features"], "similarity": 0.9}]
+    qa = DummyQAEngine({"status": "success", "sources": sources, "answer": "ok"})
+    templates = {"follow_ups_by_module": {"features": ["旧建议", "新建议"]}}
+    state = DialogueState(
+        recent_suggestions=["旧建议"],
+        suggestion_cooldown={"旧建议": 1},
+        slots={"project_name": "ChatBI"},
+    )
+    orch = DialogueOrchestrator(qa_engine=qa, templates=templates, gap_threshold=0.1)
+    res = orch.answer_with_guidance("问句", state)
+    assert "旧建议" in res["suggestions"]  # 冷却后重新放行
+    assert state.suggestion_cooldown["旧建议"] == 2
+
+
+def test_monitor_receives_dialogue_metrics():
+    class Monitor:
+        def __init__(self):
+            self.last_event = None
+
+        @staticmethod
+        def make_trace_id():
+            return "trace-1"
+
+        def log_event(self, event):
+            self.last_event = event
+
+    monitor = Monitor()
+    qa = DummyQAEngine({"status": "success", "sources": [{"similarity": 1.0}], "answer": "ok"})
+    qa.monitor = monitor
+    templates = {"follow_ups_by_module": {"default": ["d1", "d2"]}}
+    orch = DialogueOrchestrator(qa_engine=qa, templates=templates, gap_threshold=0.1)
+    orch.answer_with_guidance("问句", DialogueState(slots={"project_name": "ChatBI"}))
+    assert monitor.last_event is not None
+    assert monitor.last_event["dialogue_phase"] in {"follow_up", "gap_prompt"}
+    assert monitor.last_event["repeat_blocked_count"] == 0
+
+
+def test_llm_invalid_output_sets_fallback_flag():
+    class BadFollowupLLM:
+        @staticmethod
+        def generate(prompt: str):
+            return json.dumps({"follow_ups": "not-a-list"})
+
+    qa = DummyQAEngine({"status": "success", "sources": [{"similarity": 1.0}], "answer": "ok"})
+    templates = {"follow_ups_by_module": {"default": ["d1"]}}
+    # 需要 prompt 文件，使用真实 guided_llm.txt 以避免 None
+    prompt_path = str(Path("src/prompts/guided_llm.txt").resolve())
+    orch = DialogueOrchestrator(
+        qa_engine=qa,
+        templates=templates,
+        llm_client=BadFollowupLLM(),
+        llm_prompt_path=prompt_path,
+        gap_threshold=0.1,
+    )
+
+    class Monitor:
+        def __init__(self):
+            self.last_event = None
+
+        @staticmethod
+        def make_trace_id():
+            return "trace-1"
+
+        def log_event(self, event):
+            self.last_event = event
+
+    qa.monitor = Monitor()
+    orch.answer_with_guidance("问句", DialogueState(slots={"project_name": "ChatBI"}))
+    assert qa.monitor.last_event is not None
+    assert qa.monitor.last_event["fallback_rate"] == 1.0  # fallback_used True
