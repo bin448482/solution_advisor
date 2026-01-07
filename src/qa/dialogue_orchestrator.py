@@ -170,7 +170,7 @@ class DialogueOrchestrator:
             state.last_phase = "fallback"
 
         self._log_dialogue_metrics(state)
-        return state.last_result
+        return self._state_get(state, "last_result", {})
 
     # ---- 辅助 ----
     def _best_similarity(self, sources: List[Dict[str, Any]]) -> float:
@@ -394,25 +394,45 @@ class DialogueOrchestrator:
         return modules
 
     # ---- 监控字段补充 ----
+    @staticmethod
+    def _state_get(state: Any, key: str, default: Any = None) -> Any:
+        """兼容 DialogueState (dataclass) 与 LangGraph 返回的 AddableValuesDict."""
+        if hasattr(state, key):
+            return getattr(state, key, default)
+        if isinstance(state, dict):
+            return state.get(key, default)
+        try:
+            return state[key]  # type: ignore[index]
+        except Exception:
+            return default
+
     def _log_dialogue_metrics(self, state: DialogueState) -> None:
         monitor = getattr(self.qa_engine, "monitor", None)
         if not monitor:
             return
+        question_raw = self._state_get(state, "question_raw", "")
+        question_enriched = self._state_get(state, "question_enriched", "")
+        slots = self._state_get(state, "slots", {}) or {}
+        last_result = self._state_get(state, "last_result", {}) or {}
+        last_phase = self._state_get(state, "last_phase", None)
+        graph_attempt = self._state_get(state, "graph_attempt", 1)
+        repeat_blocked_count = self._state_get(state, "repeat_blocked_count", 0)
+        fallback_used = bool(self._state_get(state, "fallback_used", False))
         event = {
             "trace_id": monitor.make_trace_id(),
-            "question_raw": state.question_raw,
-            "question_enriched": state.question_enriched,
-            "project_name": state.slots.get("project_name"),
-            "dialogue_phase": state.last_phase,
-            "graph_node": state.last_phase,
-            "graph_attempt": state.graph_attempt,
-            "slots_filled": state.slots,
-            "suggestions_shown": state.last_result.get("suggestions", []),
-            "repeat_blocked_count": state.repeat_blocked_count,
-            "fallback_used": state.fallback_used,
-            "fallback_rate": 1.0 if state.fallback_used else 0.0,
-            "path_taken": state.last_phase,
-            "unanswerable_detected": state.last_result.get("status") == "no_context",
+            "question_raw": question_raw,
+            "question_enriched": question_enriched,
+            "project_name": slots.get("project_name"),
+            "dialogue_phase": last_phase,
+            "graph_node": last_phase,
+            "graph_attempt": graph_attempt,
+            "slots_filled": slots,
+            "suggestions_shown": last_result.get("suggestions", []),
+            "repeat_blocked_count": repeat_blocked_count,
+            "fallback_used": fallback_used,
+            "fallback_rate": 1.0 if fallback_used else 0.0,
+            "path_taken": last_phase,
+            "unanswerable_detected": last_result.get("status") == "no_context",
         }
         monitor.log_event(event)
 

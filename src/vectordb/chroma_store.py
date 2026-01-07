@@ -133,14 +133,19 @@ class ChromaStore:
 
         for doc in documents:
             metadata = doc["metadata"].copy()
-            # Convert any list metadata to JSON strings (Chroma不支持 list)
+            # Convert list/dict metadata to JSON strings (Chroma不支持 list/dict)
             for key, val in list(metadata.items()):
                 if isinstance(val, list):
+                    metadata[key] = json.dumps(val, ensure_ascii=False)
+                elif isinstance(val, dict):
                     metadata[key] = json.dumps(val, ensure_ascii=False)
             # Add indexed timestamp
             metadata["indexed_at"] = datetime.utcnow().isoformat() + "Z"
             # Store original JSON
-            metadata["original_json"] = doc.get("original_json", "")
+            original_json = doc.get("original_json", "")
+            if not isinstance(original_json, (str, int, float, bool)) and original_json is not None:
+                original_json = json.dumps(original_json, ensure_ascii=False)
+            metadata["original_json"] = original_json
             metadatas.append(metadata)
 
         # Upsert (insert or update if ID exists - idempotent)
