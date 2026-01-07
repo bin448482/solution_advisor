@@ -104,6 +104,7 @@ graph = builder.compile(parallel_edges=[("map", "merge"), ("merge", "reduce")])
 - 同名直接合并；相似度 > 0.8（可用向量或 LLM 判定）合并并统一命名。
 - 目标全局类别数：6–12 个，避免过细。
 - 保留合并映射，记录每类涉及的 slide_no、source_files。
+- `category_id` 规范：全局类别在 Reduce 阶段必须生成稳定的 `category_id`，取 `category_name` 做语义化 slug（保留中英文，其他符号替换为 `_`，转小写，必要时追加序号去重）。禁止使用空值或无意义占位符（如 `agent`），应能反映类别含义，例如 “产品定位”→`产品定位` 或 `product_positioning`。生成失败时需 fallback 为 hash，但仍应保持唯一。
 
 ## Reduce 层细节
 - 输入：某全局类别下的所有 slide 摘要 + Map 层局部摘要/QA。
@@ -145,3 +146,14 @@ graph = builder.compile(parallel_edges=[("map", "merge"), ("merge", "reduce")])
 - 分类漂移：限制类别上限并做相似度合并；保留人工更名口径。
 - Token 过长：批切分 + 精简字段；必要时换长上下文模型。
 - 成本：Map 与 Reduce 各一次/批与/类，整体调用量可控；可并行但注意并发上限。
+
+## 发现的设计缺陷与补充要点
+- 固定分类口径：Map/Merge 阶段仅接受 8 个标准类别（positioning、features、architecture、integration、cases、comparison、deployment、roadmap），未命中标准类别的候选直接丢弃，不再生成“其他信息”等兜底类；slug = 标准 category_id。
+- 结构与长度校验：Validate 节点必须校验 summary 200–300 字、qa 3–5 条且答案 ≤200 字、source_slide_refs 非空且去重、chunk_type 合法；失败应重试或记录 error，禁止直接落盘。
+- 文本格式规范：统一 text 拼装模板（含项目名、【Category】、【Summary】、【Representative Q&A】与“来源页 [x]”），original_json 至少保留 source_files、qa_count 以便审计。
+- 合并策略强化：Merge 需加入语义/向量相似度合并与阈值，避免仅按字符串；“其他信息”类别应有触发阈值和清晰命名，防止强行兜底混杂。
+- 溯源与审计：保留 map_summaries、合并映射、生成/解析错误到日志或 metadata，便于对照人工稿。
+- Overview 约定：明确是否必产 overview，若产出需给出长度与字段要求；如不需要，应在 emit 前过滤，保持与人工稿一致。
+- Fallback 收敛：map 解析失败的 fallback 结果不应直接写入正式 rag_documents，应标注低置信或触发重试，防止污染类别摘要。
+- Prompt 补强：Map 提示显式列出 8 个标准类别（含中英文），只能从列表选择且“无法归类则跳过”；Map 仅输出 category_name/category_hint/slides，不生成 summary/QA（由 Reduce 阶段负责）。Reduce 提示才生成 200–300 字摘要与 3–5 QA。
+- QA 引用缺失处理：不强行编造 source_slide_refs；如 QA 无引用则保留内容并在 metadata 标记 qa_missing_refs=true，便于后续人工补全。

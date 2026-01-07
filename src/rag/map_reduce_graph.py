@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import difflib
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +53,48 @@ class MapReduceCategoryGraph:
         self._graph = self._build_graph()
         # cache summaries by slide for quick lookups
         self._summary_map: Dict[int, PageSummary] = {}
+        # track slug usage to ensure category ids remain unique
+        self._slug_counts: Counter[str] = Counter()
+        # standard category schema（与人工稿对齐）
+        self._standard_categories: Dict[str, Dict[str, str]] = {
+            "positioning": {"name": "产品定位"},
+            "features": {"name": "功能特性"},
+            "architecture": {"name": "技术架构"},
+            "integration": {"name": "集成对接"},
+            "cases": {"name": "客户案例"},
+            "comparison": {"name": "竞品对比"},
+            "deployment": {"name": "部署运维"},
+            "roadmap": {"name": "产品规划"},
+        }
+        # 允许的别名映射到标准 id
+        self._category_alias: Dict[str, str] = {
+            "产品定位": "positioning",
+            "定位": "positioning",
+            "核心定位": "positioning",
+            "定位与价值": "positioning",
+            "功能特性": "features",
+            "核心功能": "features",
+            "产品功能": "features",
+            "能力": "features",
+            "技术架构": "architecture",
+            "系统架构": "architecture",
+            "架构": "architecture",
+            "集成对接": "integration",
+            "数据集成": "integration",
+            "接入": "integration",
+            "客户案例": "cases",
+            "案例": "cases",
+            "usecase": "cases",
+            "竞品对比": "comparison",
+            "对比": "comparison",
+            "市场对比": "comparison",
+            "部署运维": "deployment",
+            "落地评估": "deployment",
+            "实施运维": "deployment",
+            "产品规划": "roadmap",
+            "路线图": "roadmap",
+            "版本规划": "roadmap",
+        }
 
     # ---------- Public API ----------
     def run(self, summaries: List[PageSummary]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -159,9 +203,19 @@ class MapReduceCategoryGraph:
         if not reduce_results:
             errors.append({"stage": "validate_emit", "error": "empty_reduce_results"})
 
-        rag_docs.extend(reduce_results)
+        for chunk in reduce_results:
+            ok, msg = self._validate_chunk(chunk)
+            if ok:
+                rag_docs.append(chunk)
+            else:
+                errors.append({"stage": "validate_emit", "category": chunk.get("metadata", {}).get("category_name"), "error": msg})
+
         if overview:
-            rag_docs.append(overview)
+            ok, msg = self._validate_overview(overview)
+            if ok:
+                rag_docs.append(overview)
+            else:
+                errors.append({"stage": "validate_emit", "category": "overview", "error": msg})
 
         save_json(rag_docs, self.output_path)
         return {"rag_documents": rag_docs, "errors": errors}
@@ -193,7 +247,9 @@ class MapReduceCategoryGraph:
             f"批次: {batch_id}",
             "输出要求：",
             f"- 生成 3-6 个类别，最多 {self.settings.map_max_categories_per_batch} 个；",
-            "- 每个类别包含字段: category_name, category_hint, slides(数组), summary(100-150字), qa(最多2条，每条含q/a/source_slide_refs)。",
+            "- 只能从下列 8 个标准类别中选择（若无匹配则跳过，不要自造类别）：",
+            "  positioning(产品定位) / features(功能特性) / architecture(技术架构) / integration(集成对接) / cases(客户案例) / comparison(竞品对比) / deployment(部署运维) / roadmap(产品规划)",
+            "- 每个类别包含字段: category_name(用中文标准名), category_hint, slides(数组)。不要生成摘要或问答，这些在 Reduce 阶段完成。",
             "- 仅输出 JSON，不要额外解释。",
             "页面摘要：",
         ]
@@ -218,11 +274,7 @@ class MapReduceCategoryGraph:
                 {
                     "category_name": "string",
                     "category_hint": "string",
-                    "slides": [1, 2],
-                    "summary": "100-150字摘要",
-                    "qa": [
-                        {"q": "问题", "a": "答案<=120字", "source_slide_refs": [1, 2]}
-                    ],
+                    "slides": [1, 2]
                 }
             ],
         }
@@ -232,8 +284,6 @@ class MapReduceCategoryGraph:
 
     def _fallback_map(self, batch_id: str, batch: List[PageSummary]) -> Dict[str, Any]:
         slides = [s.slide_no for s in batch]
-        text = "; ".join(filter(None, [s.title or s.one_liner for s in batch]))
-        summary = text[:140] if text else "综合摘要"
         return {
             "batch_id": batch_id,
             "categories": [
@@ -241,8 +291,6 @@ class MapReduceCategoryGraph:
                     "category_name": "综合摘要",
                     "category_hint": "general",
                     "slides": slides,
-                    "summary": summary,
-                    "qa": [],
                 }
             ],
         }
@@ -255,14 +303,6 @@ class MapReduceCategoryGraph:
                     "category_name": s.title or "综合摘要",
                     "category_hint": "mock",
                     "slides": [s.slide_no],
-                    "summary": s.one_liner or (s.details or "")[:120] or "示例摘要",
-                    "qa": [
-                        {
-                            "q": f"{s.title or '本页要点'}是什么？",
-                            "a": s.one_liner or "示例回答",
-                            "source_slide_refs": [s.slide_no],
-                        }
-                    ],
                 }
             )
         return {"batch_id": batch_id, "categories": categories}
@@ -276,52 +316,40 @@ class MapReduceCategoryGraph:
         for res in map_results:
             for cat in res.get("categories", []):
                 name = cat.get("category_name") or "未命名"
-                norm = self._normalize_name(name)
+                std_id, std_name, alias_conf = self._map_to_standard_category(name)
+                if not std_id:
+                    # 非标准类别直接丢弃，避免引入额外 category
+                    continue
+                norm = std_id
                 entry = merged.setdefault(
                     norm,
                     {
-                        "category_name": name,
+                        "category_name": std_name,
+                        "category_id": std_id,
                         "category_hint": cat.get("category_hint") or "",
                         "slides": set(),
                         "map_summaries": [],
                         "qa": [],
+                        "alias_confidence": alias_conf,
                     },
                 )
                 entry["slides"].update(cat.get("slides") or [])
                 if cat.get("summary"):
                     entry["map_summaries"].append(cat["summary"])
-                entry["qa"].extend(cat.get("qa") or [])
 
         merged_list = []
         for norm, data in merged.items():
             merged_list.append(
                 {
                     "category_name": data["category_name"],
+                    "category_id": data.get("category_id"),
                     "category_hint": data.get("category_hint"),
                     "slides": sorted({int(s) for s in data["slides"]}),
                     "map_summaries": data["map_summaries"],
-                    "qa": data["qa"],
+                    "qa": data.get("qa", []),
+                    "alias_confidence": data.get("alias_confidence", 0.0),
                 }
             )
-
-        target = self.settings.reduce_target_categories
-        if target and len(merged_list) > target:
-            merged_list.sort(key=lambda c: len(c.get("slides", [])), reverse=True)
-            kept = merged_list[: target - 1]
-            overflow = merged_list[target - 1 :]
-            other_slides = {s for cat in overflow for s in cat.get("slides", [])}
-            other_summaries = [s for cat in overflow for s in cat.get("map_summaries", [])]
-            other_qa = [qa for cat in overflow for qa in cat.get("qa", [])]
-            kept.append(
-                {
-                    "category_name": "其他信息",
-                    "category_hint": "misc",
-                    "slides": sorted(other_slides),
-                    "map_summaries": other_summaries,
-                    "qa": other_qa,
-                }
-            )
-            merged_list = kept
 
         merged_list.sort(key=lambda c: c.get("category_name", ""))
         return merged_list, errors
@@ -331,7 +359,7 @@ class MapReduceCategoryGraph:
         name = category.get("category_name") or "未命名"
         slides = category.get("slides", [])
         map_summaries = category.get("map_summaries", [])
-        qa_examples = category.get("qa", [])[:5]
+        qa_examples = []
 
         # Build context from slide summaries
         slide_context = []
@@ -357,13 +385,29 @@ class MapReduceCategoryGraph:
             else:
                 summary_text = map_summaries[0] if map_summaries else raw[:260]
 
-        chunk_id = f"{self.project_name}_category_{self._slugify(name)}"
-        text_lines = [f"类别: {name}", f"摘要: {summary_text}"]
+        # ensure category id uses标准口径
+        std_id, std_name, _ = self._map_to_standard_category(name)
+        name = std_name
+        base_slug = std_id or self._slugify(name)
+        idx = self._slug_counts[base_slug]
+        self._slug_counts[base_slug] += 1
+        slug = base_slug if idx == 0 else f"{base_slug}_{idx + 1}"
+
+        chunk_id = f"{self.project_name}_category_{slug}"
+        text_lines = [
+            f"项目: {self.project_name}",
+            f"【Category】{name}",
+            "【Summary】",
+            summary_text,
+        ]
         if qa_examples:
-            text_lines.append("问答：")
-            for qa in qa_examples:
-                text_lines.append(f"- Q: {qa.get('q')}")
-                text_lines.append(f"  A: {qa.get('a')}")
+            text_lines.append("【Representative Q&A】")
+            for idx_qa, qa in enumerate(qa_examples, start=1):
+                q = qa.get("q") or ""
+                a = qa.get("a") or ""
+                refs = qa.get("source_slide_refs") or []
+                text_lines.append(f"Q{idx_qa}: {q}")
+                text_lines.append(f"A{idx_qa}: {a}（来源页: " + ",".join(map(str, refs)) + "）")
 
         source_files = [f"page_summaries/{int(s):03d}.json" for s in slides]
         metadata = ChunkMetadata(
@@ -372,6 +416,8 @@ class MapReduceCategoryGraph:
             level="category",
             summary=summary_text,  # type: ignore[arg-type]
             qa_examples=qa_examples,  # type: ignore[arg-type]
+            category_id=slug,
+            category_name=name,
             source_slide_refs=slides,
             source_files=source_files,
         )
@@ -380,7 +426,7 @@ class MapReduceCategoryGraph:
             id=chunk_id,
             text="\n".join(text_lines),
             metadata=metadata.model_dump(),
-            original_json=json.dumps({"source_files": source_files, "category": name}, ensure_ascii=False),
+            original_json=json.dumps({"source_files": source_files, "category": name, "qa_count": len(qa_examples)}, ensure_ascii=False),
         )
         return chunk.model_dump()
 
@@ -427,6 +473,8 @@ class MapReduceCategoryGraph:
                 summary_text = parsed.get("overview", "")
             else:
                 summary_text = raw[:200]
+        if not summary_text:
+            summary_text = " | ".join(summaries)[:200] if summaries else "项目综述。"
 
         metadata = ChunkMetadata(
             project_name=self.project_name,
@@ -478,10 +526,78 @@ class MapReduceCategoryGraph:
                     return None
         return None
 
+    def _map_to_standard_category(self, name: str) -> Tuple[str, str, float]:
+        """Map arbitrary category name to standard id/name; return confidence.
+
+        - 命中别名：返回标准 id/name，conf=1
+        - 模糊匹配 >=0.6：返回最相近标准类
+        - 其他：返回 (None, None, 0) 代表不采纳该类别
+        """
+        norm = self._normalize_name(name)
+        if norm in self._category_alias:
+            cid = self._category_alias[norm]
+            std_name = self._standard_categories[cid]["name"]
+            return cid, std_name, 1.0
+
+        candidates = list(self._standard_categories.keys())
+        name_pool = candidates + [self._normalize_name(v["name"]) for v in self._standard_categories.values()]
+        best_cid = None
+        best_conf = -1.0
+        for cid in candidates:
+            conf = difflib.SequenceMatcher(None, norm, cid).ratio()
+            name_conf = difflib.SequenceMatcher(None, norm, self._normalize_name(self._standard_categories[cid]["name"])).ratio()
+            conf = max(conf, name_conf)
+            if conf > best_conf:
+                best_conf = conf
+                best_cid = cid
+
+        if best_cid is None:
+            return None, None, 0.0
+
+        return best_cid, self._standard_categories[best_cid]["name"], best_conf
+
     def _slugify(self, text: str) -> str:
-        slug = re.sub(r"[^a-zA-Z0-9]+", "_", text.strip().lower())
+        # 保留中英文与数字，将其它符号压缩为下划线；保持语义以便 category_id 可读
+        slug = re.sub(r"[^\w\u4e00-\u9fff]+", "_", text.strip().lower())
         slug = re.sub(r"_+", "_", slug).strip("_")
-        return slug or "category"
+        if not slug:
+            # 极端情况下退回稳定哈希，确保非空
+            import hashlib
+
+            slug = f"category_{hashlib.md5(text.encode('utf-8')).hexdigest()[:8]}"
+        return slug
 
     def _normalize_name(self, name: str) -> str:
         return re.sub(r"\s+", "", name).lower()
+
+    def _validate_chunk(self, chunk: Dict[str, Any]) -> Tuple[bool, str]:
+        meta = chunk.get("metadata", {})
+        summary = meta.get("summary", "") or ""
+        qa = meta.get("qa_examples") or []
+        slides = meta.get("source_slide_refs") or []
+        if not slides:
+            return False, "empty_source_slide_refs"
+        # 轻量校验：仅做截断，不因长度/数量失败
+        if len(summary) > 360:
+            meta["summary"] = summary[:360]
+        if len(qa) > 5:
+            meta["qa_examples"] = qa[:5]
+            qa = meta["qa_examples"]
+        missing_refs = False
+        for idx, item in enumerate(qa):
+            ans = item.get("answer", "") or item.get("a", "") or ""
+            refs = item.get("source_slide_refs") or []
+            if len(ans) > 220:
+                item["answer"] = ans[:220]
+            if not refs:
+                missing_refs = True
+        if missing_refs:
+            meta["qa_missing_refs"] = True
+        return True, ""
+
+    def _validate_overview(self, chunk: Dict[str, Any]) -> Tuple[bool, str]:
+        meta = chunk.get("metadata", {})
+        summary = meta.get("summary", "") or ""
+        if len(summary) > 260:
+            meta["summary"] = summary[:260]
+        return True, ""
