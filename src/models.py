@@ -62,6 +62,7 @@ class StageMetrics(BaseModel):
 
 class Manifest(BaseModel):
     input_file: str
+    input_type: str = "pptx"
     file_hash: str
     timestamp: str
     page_count: int

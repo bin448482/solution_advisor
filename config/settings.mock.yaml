@@ -1,0 +1,13 @@
+﻿llm_provider: mock
+llm_api_key: ""
+llm_base_url: ""
+llm_model: gpt-4-vision-preview
+llm_temperature: 0.1
+
+render_dpi: 150
+max_workers: 3
+libreoffice_path: "C:\\Program Files\\LibreOffice\\program\\soffice.exe"
+pdftoppm_path: "C:\\Users\\zhanb.BIINN\\AppData\\Local\\Microsoft\\WinGet\\Packages\\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\\poppler-25.07.0\\Library\\bin\\pdftoppm.exe"
+
+vectordb_enabled: false
+auto_ragprep_enabled: false

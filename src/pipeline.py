@@ -43,7 +43,10 @@ class CaptureStage:
             pdftoppm_path=ctx.settings.pdftoppm_path,
             dpi=ctx.settings.render_dpi,
         )
-        slides_paths = renderer.render(ctx.pptx_path, slides_dir)
+        if ctx.input_type == "pdf":
+            slides_paths = renderer.render_pdf(ctx.pptx_path, slides_dir)
+        else:
+            slides_paths = renderer.render(ctx.pptx_path, slides_dir)
         ctx.artifacts["slides_paths"] = slides_paths
         ctx.log(f"[capture] Rendered {len(slides_paths)} slides")
         return StageResult(success_count=len(slides_paths))
@@ -53,6 +56,11 @@ class ExtractStage:
     name = "extract"
 
     def run(self, ctx: PipelineContext) -> StageResult:
+        if ctx.input_type == "pdf":
+            ctx.artifacts["slide_texts"] = []
+            ctx.log("[extract] Skipped (pdf image-only)")
+            return StageResult(success_count=0, notes="skipped (pdf image-only)")
+
         texts_path = ctx.output_dir / "slide_texts.jsonl"
         if texts_path.exists() and not ctx.force_capture:
             with texts_path.open("r", encoding="utf-8") as f:
@@ -75,14 +83,16 @@ class InterpretStage:
 
     def run(self, ctx: PipelineContext) -> StageResult:
         slide_texts: List[SlideText] = ctx.artifacts.get("slide_texts", [])
-        if not slide_texts:
-            raise ValueError("No slide_texts in context; run extract stage first.")
 
         summaries_dir = ctx.output_dir / "page_summaries"
         ensure_dir(summaries_dir)
 
+        slides_paths: List[Path] = ctx.artifacts.get("slides_paths") or sorted((ctx.output_dir / "slides").glob("*.png"))
+        image_map = {int(p.stem): p for p in slides_paths}
+
+        expected_count = len(slides_paths) if ctx.input_type == "pdf" else len(slide_texts)
         existing_files = sorted(summaries_dir.glob("*.json"))
-        if existing_files and not ctx.force_interpret and len(existing_files) == len(slide_texts):
+        if existing_files and not ctx.force_interpret and len(existing_files) == expected_count:
             summaries: List[PageSummary] = []
             for path in existing_files:
                 data = load_json(path)
@@ -93,9 +103,6 @@ class InterpretStage:
             ctx.log(f"[interpret] Reuse {len(summaries)} summaries")
             return StageResult(success_count=len(summaries), notes="reuse")
 
-        slides_paths: List[Path] = ctx.artifacts.get("slides_paths") or sorted((ctx.output_dir / "slides").glob("*.png"))
-        image_map = {int(p.stem): p for p in slides_paths}
-
         client = LLMClient(ctx.settings)
         page_summarizer = PageSummarizer(client)
 
@@ -104,18 +111,26 @@ class InterpretStage:
 
         ctx.log("[interpret] Generating page summaries ...")
         with ThreadPoolExecutor(max_workers=ctx.settings.max_workers) as executor:
-            future_map = {
-                executor.submit(self._summarize_single, page_summarizer, slide, image_map.get(slide.slide_no)): slide
-                for slide in slide_texts
-            }
+            if ctx.input_type == "pdf":
+                future_map = {
+                    executor.submit(self._summarize_single, page_summarizer, None, image_path, slide_no): slide_no
+                    for slide_no, image_path in sorted(image_map.items())
+                }
+            else:
+                if not slide_texts:
+                    raise ValueError("No slide_texts in context; run extract stage first.")
+                future_map = {
+                    executor.submit(self._summarize_single, page_summarizer, slide, image_map.get(slide.slide_no), slide.slide_no): slide.slide_no
+                    for slide in slide_texts
+                }
             for future in as_completed(future_map):
-                slide = future_map[future]
+                slide_no = future_map[future]
                 try:
                     summary = future.result()
                     summaries.append(summary)
-                    save_json(summary.model_dump(), summaries_dir / f"{slide.slide_no:03d}.json")
+                    save_json(summary.model_dump(), summaries_dir / f"{slide_no:03d}.json")
                 except Exception as exc:  # noqa: BLE001
-                    errors.append({"stage": self.name, "slide_no": slide.slide_no, "error": str(exc)})
+                    errors.append({"stage": self.name, "slide_no": slide_no, "error": str(exc)})
 
         summaries.sort(key=lambda s: s.slide_no)
         ctx.artifacts["summaries"] = summaries
@@ -124,9 +139,12 @@ class InterpretStage:
 
     @staticmethod
     def _summarize_single(
-        page_summarizer: PageSummarizer, slide: SlideText, image_path: Optional[Path]
+        page_summarizer: PageSummarizer,
+        slide: SlideText | None,
+        image_path: Optional[Path],
+        slide_no: int,
     ) -> PageSummary:
-        return page_summarizer.summarize(slide, image_path)
+        return page_summarizer.summarize(slide, image_path, slide_no=slide_no)
 
 
 class ProfileStage:
@@ -250,9 +268,14 @@ class PPTPipeline:
         if manifest_path.exists() and not force_rerun:
             return load_json(manifest_path)
 
+        input_type = pptx_path.suffix.lower().lstrip(".")
+        if input_type not in {"pptx", "pdf"}:
+            raise ValueError(f"Unsupported input type: .{input_type}")
+
         ctx = PipelineContext(
             pptx_path=pptx_path,
             output_dir=output_dir,
+            input_type=input_type,
             settings=self.settings,
             force_capture=force_capture,
             force_interpret=force_interpret,
@@ -282,6 +305,7 @@ class PPTPipeline:
 
         manifest = Manifest(
             input_file=str(pptx_path),
+            input_type=input_type,
             file_hash=compute_sha256(pptx_path),
             timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             page_count=len(slides_paths),
@@ -334,13 +358,19 @@ class PPTPipeline:
         if not targets:
             return old_manifest
 
-        # Load slide texts (reuse JSONL if present)
-        texts_path = output_dir / "slide_texts.jsonl"
-        if texts_path.exists():
-            with texts_path.open("r", encoding="utf-8") as f:
-                slide_texts = [SlideText(**json.loads(line)) for line in f if line.strip()]
-        else:
-            slide_texts = extract_text(pptx_path)
+        input_type = pptx_path.suffix.lower().lstrip(".")
+        if input_type not in {"pptx", "pdf"}:
+            raise ValueError(f"Unsupported input type: .{input_type}")
+
+        slide_texts: List[SlideText] = []
+        if input_type == "pptx":
+            # Load slide texts (reuse JSONL if present)
+            texts_path = output_dir / "slide_texts.jsonl"
+            if texts_path.exists():
+                with texts_path.open("r", encoding="utf-8") as f:
+                    slide_texts = [SlideText(**json.loads(line)) for line in f if line.strip()]
+            else:
+                slide_texts = extract_text(pptx_path)
 
         target_texts = [t for t in slide_texts if t.slide_no in targets]
         image_map = {int(p.stem): p for p in (output_dir / "slides").glob("*.png")}
@@ -356,28 +386,52 @@ class PPTPipeline:
 
         # Interpret stage (refine)
         interpret_start = time.time()
-        for slide in target_texts:
-            try:
-                new_summary = page_summarizer.summarize(slide, image_map.get(slide.slide_no))
-                for i, s in enumerate(all_summaries):
-                    if s.slide_no == slide.slide_no:
-                        refine_logs.append(
-                            {
-                                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                                "slide_no": slide.slide_no,
-                                "old_confidence": all_summaries[i].confidence,
-                                "new_confidence": new_summary.confidence,
-                                "provider": self.settings.llm_provider,
-                                "model": self.settings.llm_model,
-                                "threshold": threshold,
-                                "reason": "confidence_below_threshold" if not pages else "manual_selection",
-                            }
-                        )
-                        all_summaries[i] = new_summary
-                        break
-                save_json(new_summary.model_dump(), summaries_dir / f"{slide.slide_no:03d}.json")
-            except Exception as exc:  # noqa: BLE001
-                errors.append({"stage": "refine_interpret", "slide_no": slide.slide_no, "error": str(exc)})
+        if input_type == "pdf":
+            for slide_no in targets:
+                try:
+                    new_summary = page_summarizer.summarize(None, image_map.get(slide_no), slide_no=slide_no)
+                    for i, s in enumerate(all_summaries):
+                        if s.slide_no == slide_no:
+                            refine_logs.append(
+                                {
+                                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                    "slide_no": slide_no,
+                                    "old_confidence": all_summaries[i].confidence,
+                                    "new_confidence": new_summary.confidence,
+                                    "provider": self.settings.llm_provider,
+                                    "model": self.settings.llm_model,
+                                    "threshold": threshold,
+                                    "reason": "confidence_below_threshold" if not pages else "manual_selection",
+                                }
+                            )
+                            all_summaries[i] = new_summary
+                            break
+                    save_json(new_summary.model_dump(), summaries_dir / f"{slide_no:03d}.json")
+                except Exception as exc:  # noqa: BLE001
+                    errors.append({"stage": "refine_interpret", "slide_no": slide_no, "error": str(exc)})
+        else:
+            for slide in target_texts:
+                try:
+                    new_summary = page_summarizer.summarize(slide, image_map.get(slide.slide_no), slide_no=slide.slide_no)
+                    for i, s in enumerate(all_summaries):
+                        if s.slide_no == slide.slide_no:
+                            refine_logs.append(
+                                {
+                                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                    "slide_no": slide.slide_no,
+                                    "old_confidence": all_summaries[i].confidence,
+                                    "new_confidence": new_summary.confidence,
+                                    "provider": self.settings.llm_provider,
+                                    "model": self.settings.llm_model,
+                                    "threshold": threshold,
+                                    "reason": "confidence_below_threshold" if not pages else "manual_selection",
+                                }
+                            )
+                            all_summaries[i] = new_summary
+                            break
+                    save_json(new_summary.model_dump(), summaries_dir / f"{slide.slide_no:03d}.json")
+                except Exception as exc:  # noqa: BLE001
+                    errors.append({"stage": "refine_interpret", "slide_no": slide.slide_no, "error": str(exc)})
 
         stage_metrics.append(
             StageMetrics(
@@ -460,6 +514,7 @@ class PPTPipeline:
         # Update manifest
         manifest = Manifest(
             input_file=str(pptx_path),
+            input_type=input_type,
             file_hash=old_manifest.get("file_hash", compute_sha256(pptx_path)),
             timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             page_count=old_manifest.get("page_count", len(all_summaries)),
