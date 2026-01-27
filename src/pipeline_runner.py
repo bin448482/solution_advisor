@@ -29,6 +29,7 @@ class PipelineContext:
     pptx_path: Path
     output_dir: Path
     settings: Any
+    input_type: str = "pptx"
     force_capture: bool = False
     force_interpret: bool = False
     no_vectordb: bool = False

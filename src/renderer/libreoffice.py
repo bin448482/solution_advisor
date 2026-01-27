@@ -53,7 +53,20 @@ class LibreOfficeRenderer(Renderer):
         if not pdf_path.exists():
             raise RenderError(f"PDF not generated: {pdf_path}")
 
-        # 2) PDF -> PNG
+        return self._render_pdf_to_png(pdf_path, output_dir)
+
+    def render_pdf(self, pdf_path: Path, output_dir: Path) -> List[Path]:
+        if not command_exists(self.pdftoppm_path):
+            raise RenderError(f"pdftoppm executable not found: {self.pdftoppm_path}")
+
+        ensure_dir(output_dir)
+        for png in output_dir.glob("*.png"):
+            png.unlink()
+
+        return self._render_pdf_to_png(pdf_path, output_dir)
+
+    def _render_pdf_to_png(self, pdf_path: Path, output_dir: Path) -> List[Path]:
+        # PDF -> PNG
         prefix = output_dir / "slide"
         run_command(
             [
