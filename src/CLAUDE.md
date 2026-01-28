@@ -1,10 +1,10 @@
 # Source Directory (src/)
 
-This directory contains the core PPT parsing and project profiling pipeline implementation.
+This directory contains the core PPT/PDF parsing and project profiling pipeline implementation.
 
 ## Overview
 
-The src/ directory implements a complete pipeline that transforms PowerPoint presentations into structured, traceable project profiles suitable for RAG-based Q&A systems.
+The src/ directory implements a complete pipeline that transforms PowerPoint presentations and PDFs into structured, traceable project profiles suitable for RAG-based Q&A systems.
 
 ## Module Organization
 
@@ -109,10 +109,10 @@ Main orchestration logic:
 - RAG 阶段按 Settings 开关执行：LLM 分类可关；topic/step/metrics chunk 可按需生成；refine 复用相同 RAG 逻辑保持 rag_documents 一致。
 
 **Pipeline Stages**:
-1. **Idempotency Check**: Compare PPTX hash with previous run
-2. **Rendering**: PPTX → PNG images (sequential)
-3. **Text Extraction**: PPTX → SlideText objects (fast)
-4. **Page Summarization**: Images + text → PageSummary objects (parallel)
+1. **Idempotency Check**: Compare input hash with previous run
+2. **Rendering**: PPTX → PNG images (sequential) or PDF → PNG images
+3. **Text Extraction**: PPTX → SlideText objects (fast); PDF skips extraction
+4. **Page Summarization**: PPTX uses images + text; PDF uses image-only (parallel)
 5. **Profile Generation**: Summaries → ProjectProfile (sequential)
 6. **RAG Preparation**: Summaries + profile → embedding docs (fast)
 7. **Manifest Writing**: Metadata + errors → manifest.json
@@ -129,10 +129,11 @@ CLI entry point:
 **Usage**:
 ```bash
 python -m src --input ppts/file.pptx --output ppt_outputs/file [--force] [--verbose]
+python -m src --input pdfs/file.pdf --output ppt_outputs/file [--force] [--verbose]
 ```
 
 **Arguments**:
-- `--input`: Path to input PPTX file (required)
+- `--input`: Path to input PPTX or PDF file (required)
 - `--output`: Output directory (required)
 - `--config`: Config file path (default: config/settings.yaml)
 - `--force`: Force re-run (ignore hash check)
@@ -148,6 +149,20 @@ PPTX Input
 [Extractor] → List[SlideText] (in-memory)
   ↓
 [PageSummarizer] → page_summaries/*.json (parallel)
+  ↓
+[ProfileGenerator] → doc_summary/project_profile.json
+  ↓
+[RAGPreparer] → embeddings/rag_documents.json
+  ↓
+[Pipeline] → manifest.json
+```
+
+```
+PDF Input
+  ↓
+[Renderer] → slides/*.png (from pdftoppm)
+  ↓
+[PageSummarizer] → page_summaries/*.json (image-only, parallel)
   ↓
 [ProfileGenerator] → doc_summary/project_profile.json
   ↓
@@ -197,6 +212,9 @@ PPTX Input
 ```bash
 # Basic run
 python -m src --input ppts/demo.pptx --output ppt_outputs/demo
+
+# PDF image-only run
+python -m src --input pdfs/demo.pdf --output ppt_outputs/demo_pdf
 
 # Force re-run (ignore cache)
 python -m src --input ppts/demo.pptx --output ppt_outputs/demo --force

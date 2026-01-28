@@ -6,6 +6,7 @@ This repository is currently **document- and asset-driven**: it stores project P
 
 - `docs/`: Source-of-truth documentation (requirements, designs, notes). Prefer Markdown (`.md`).
 - `ppts/`: Input PPT/PPTX assets (e.g. `ppts/ChatBI产品介绍_2025.pptx`).
+- `pdfs/`: Input PDF assets for image-only parsing (e.g. `pdfs/AI驱动的新一代智能软件测试最新版-智穹云启-202508-精简版.pdf`).
 - `ppt_outputs/`: Generated outputs (slide images, per-page summaries, manifests). Treat as build artifacts unless explicitly needed for review.
 - `.claude/`: Local agent/tool settings (keep minimal; avoid committing secrets).
 
@@ -19,9 +20,10 @@ There is **no build/test runner committed yet**. Common repo checks:
 - `git status` — confirm only intended files are staged/modified.
 - `find docs -name "*.md" -maxdepth 1` — list key docs for review.
 - `ls -la ppts ppt_outputs` — verify inputs vs generated artifacts.
+- `python -m src --input pdfs/<file>.pdf --output ppt_outputs/<name>` — 运行 PDF 图片解析（image-only，不做文本抽取）。
 - `python -m src.scripts.qa_cli -q "ChatBI的核心功能是什么" [-p <项目名>] --config config/settings.yaml` — 运行 RAG 问答 CLI（top_k/top_n/tau 可调）。
 
-When adding an automation pipeline (PPT→images→summaries), provide a single entrypoint, e.g. `python -m <module> --input ppts/... --out ppt_outputs/...`.
+When adding an automation pipeline (PPT/PDF→images→summaries), provide a single entrypoint, e.g. `python -m <module> --input ppts/... --out ppt_outputs/...`.
 
 ## Coding Style & Naming Conventions
 
@@ -61,20 +63,20 @@ When adding an automation pipeline (PPT→images→summaries), provide a single 
 | 子目录 `AGENTS.md` | 职责概述 |
 | --- | --- |
 | `src/AGENTS.md` | 总览 PPT 解析主流程、配置、核心依赖与 CLI 入口。 |
-| `src/renderer/AGENTS.md` | PPTX → PDF/PNG 渲染策略与对 `soffice`/`pdftoppm` 依赖。 |
-| `src/extractor/AGENTS.md` | 幻灯片文本抽取逻辑与数据对齐假设。 |
-| `src/summarizer/AGENTS.md` | LLM 客户端、单页总结与项目画像生成流程。 |
-| `src/prompts/AGENTS.md` | 统一管理问答/总结/画像的 Prompt 文本与加载器。 |
-| `src/rag/AGENTS.md` | QA 对生成、LLM 分类与多类型 chunk 生成逻辑（RAG v2）。 |
 | `src/embeddings/AGENTS.md` | M3E 向量模型加载、设备选择与批量编码策略。 |
-| `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤约定。 |
+| `src/extractor/AGENTS.md` | 幻灯片文本抽取逻辑与数据对齐假设。 |
+| `src/prompts/AGENTS.md` | 统一管理问答/总结/画像的 Prompt 文本与加载器。 |
 | `src/qa/AGENTS.md` | QA 引擎、监控与缓存（JSONL 精确缓存，语义缓存已移除）职责与配置。 |
-| `src/ui/AGENTS.md` | Streamlit Web UI，项目选择、问答交互、引用展示与反馈收集。 |
+| `src/rag/AGENTS.md` | QA 对生成、LLM 分类与多类型 chunk 生成逻辑（RAG v2）。 |
+| `src/renderer/AGENTS.md` | PPTX → PDF/PNG 渲染策略与对 `soffice`/`pdftoppm` 依赖。 |
 | `src/scripts/AGENTS.md` | CLI 工具（qa_cli、vectordb_cli）参数与输出规范。 |
+| `src/summarizer/AGENTS.md` | LLM 客户端、单页总结与项目画像生成流程。 |
+| `src/ui/AGENTS.md` | Streamlit Web UI，项目选择、问答交互、引用展示与反馈收集。 |
+| `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤约定。 |
 | `tests/AGENTS.md` | 测试覆盖范围、跳过条件与烟囱测试说明。 |
 
 ## Code status (MVP skeleton)
-- Python pipeline lives in `src/` with CLI entry `python -m src --input ppts/... --output ppt_outputs/... --force`.
+- Python pipeline lives in `src/` with CLI entry `python -m src --input ppts/...|pdfs/... --output ppt_outputs/... --force`.
 - Core pieces: rendering (`renderer/libreoffice.py`), text extraction (`extractor/ppt_extractor.py`), LLM summarization (`summarizer/`), orchestration (`pipeline.py`), config (`config.py`), CLI (`__main__.py`), utilities (`utils.py`).
 - RAG 文档生成（v2）：`src/rag/` 包实现 QA-pair 方案，包含 `qa_generator.py`（问答对生成）、`classifier.py`（LLM 批量分类）、`chunk_generator.py`（多类型 chunk 生成）；自动生成代码仍在 `pipeline.py` 中保留但默认关闭（`auto_ragprep_enabled=false`），现阶段需按 `docs/generate_rag_documents.md` 人工产出 `ppt_outputs/<ppt>/embeddings/rag_documents.json`。
 - RAG 开关：`config.Settings` 中的 `enable_llm_classify` / `enable_topic_chunks` / `enable_step_chunks` / `enable_metrics_chunks` 控制是否启用分类和可选 chunk（默认关闭，便于回滚/控成本）；refine 流程与主流程使用同一 RAG 生成逻辑。

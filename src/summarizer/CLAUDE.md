@@ -4,7 +4,7 @@ This module uses LLMs to analyze slides and generate structured summaries and pr
 
 ## Purpose
 
-Transform raw slide content (images + text) into structured, semantic summaries using multimodal LLMs. Aggregates page-level summaries into comprehensive project profiles with evidence traceability.
+Transform raw slide content (images + text, or image-only for PDF) into structured, semantic summaries using multimodal LLMs. Aggregates page-level summaries into comprehensive project profiles with evidence traceability.
 
 ## Architecture
 
@@ -62,7 +62,7 @@ llm_temperature: float  # 0.0-1.0 (default: 0.1 for consistency)
 
 **Input**:
 - Slide image (PNG file path)
-- Extracted text (`SlideText` object)
+- Extracted text (`SlideText` object, optional for PDF image-only)
 - Slide number
 
 **Output**: `PageSummary` object with:
@@ -80,6 +80,7 @@ llm_temperature: float  # 0.0-1.0 (default: 0.1 for consistency)
 - Explicit JSON schema with examples
 - Emphasizes confidence scoring for uncertain extractions
 - Requests visual grounding via image_caption
+- Image-only mode when `slide_text` is None (PDF input); prompt excludes text and emphasizes visible content only
 
 **Error Handling**:
 - JSON parsing with fallbacks (handles dict or list responses)
@@ -157,6 +158,13 @@ summarizer = PageSummarizer(client)
 summary = summarizer.summarize_page(
     slide_image_path=Path("slides/001.png"),
     slide_text=slide_text,
+    slide_no=1
+)
+
+# PDF image-only usage (no SlideText)
+summary = summarizer.summarize_page(
+    slide_image_path=Path("slides/001.png"),
+    slide_text=None,
     slide_no=1
 )
 ```

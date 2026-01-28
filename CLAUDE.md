@@ -19,6 +19,9 @@ The primary focus is the PPT parsing pipeline, which extracts slides as images, 
 # Basic usage
 python -m src --input ppts/ChatBI产品介绍_2025.pptx --output ppt_outputs/ChatBI产品介绍_2025
 
+# PDF image-only usage (no text extraction)
+python -m src --input pdfs/AI驱动的新一代智能软件测试最新版-智穹云启-202508-精简版.pdf --output ppt_outputs/AI驱动的新一代智能软件测试最新版-智穹云启-202508-精简版
+
 # Force re-run (ignore cached results)
 python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --force
 
@@ -113,6 +116,19 @@ PPTX Input
   ├─ M3EEmbedding: Generate 768-dim vectors for semantic search
   ├─ ChromaStore: Batch insert with metadata (project, slide_no, confidence, level)
   └─ Idempotent upsert: Safe to re-run without duplicates
+  ↓
+[Pipeline] Write manifest.json with metadata, errors, rag_documents, and vectordb_metrics
+```
+
+**PDF Input (image-only path)**:
+```
+PDF Input
+  ↓
+[Renderer] Poppler: PDF → PNG images
+  ↓
+[PageSummarizer] LLM Vision API: Image-only → structured JSON summary (parallel)
+  ↓
+[ProfileGenerator] LLM: Aggregate summaries → project profile with evidence map
   ↓
 [Pipeline] Write manifest.json with metadata, errors, rag_documents, and vectordb_metrics
 ```
@@ -448,14 +464,16 @@ The repository uses paired hierarchical docs (`AGENTS.md` + `CLAUDE.md`) to keep
 | --- | --- |
 | `AGENTS.md` | 全局开发规范、目录职责索引、常用命令。 |
 | `src/AGENTS.md` | PPT 解析主流程概览、配置与依赖。 |
-| `src/renderer/AGENTS.md` | PPTX → PDF/PNG 渲染策略与外部工具要求。 |
-| `src/extractor/AGENTS.md` | 幻灯片文本抽取流程与对齐假设。 |
-| `src/summarizer/AGENTS.md` | LLM 总结/画像生成链路与客户端配置。 |
 | `src/embeddings/AGENTS.md` | M3E 向量模型加载与编码策略。 |
-| `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤。 |
+| `src/extractor/AGENTS.md` | 幻灯片文本抽取流程与对齐假设。 |
+| `src/prompts/AGENTS.md` | 统一管理问答/总结/画像的 Prompt 文本与加载器。 |
 | `src/qa/AGENTS.md` | QA 引擎 + 监控/缓存职责、配置键说明。 |
-| `src/ui/AGENTS.md` | Streamlit Web UI 入口、运行方式与测试要点。 |
+| `src/rag/AGENTS.md` | QA 对生成、LLM 分类与多类型 chunk 生成逻辑（RAG v2）。 |
+| `src/renderer/AGENTS.md` | PPTX → PDF/PNG 渲染策略与外部工具要求。 |
 | `src/scripts/AGENTS.md` | QA/Vectordb CLI 参数、输出与错误处理。 |
+| `src/summarizer/AGENTS.md` | LLM 总结/画像生成链路与客户端配置。 |
+| `src/ui/AGENTS.md` | Streamlit Web UI 入口、运行方式与测试要点。 |
+| `src/vectordb/AGENTS.md` | Chroma 存储封装、检索护栏与项目过滤。 |
 | `tests/AGENTS.md` | 测试覆盖、跳过条件与烟囱测试说明。 |
 
 ### @CLAUDE.md 索引
@@ -463,14 +481,17 @@ The repository uses paired hierarchical docs (`AGENTS.md` + `CLAUDE.md`) to keep
 | --- | --- |
 | `CLAUDE.md` | 高层概览、架构与端到端用法。 |
 | `src/CLAUDE.md` | 核心管线详细说明、文件/数据流与配置示例。 |
-| `src/renderer/CLAUDE.md` | 渲染模块设计、两步转换策略及依赖。 |
-| `src/extractor/CLAUDE.md` | 文本抽取设计、数据模型与边界情况。 |
-| `src/summarizer/CLAUDE.md` | 单页总结/画像提示词、LLM 客户端及错误处理。 |
 | `src/embeddings/CLAUDE.md` | 向量模型选择、缓存、设备策略与性能提示。 |
-| `src/vectordb/CLAUDE.md` | Chroma 集成、检索护栏与统计/维护命令。 |
+| `src/extractor/CLAUDE.md` | 文本抽取设计、数据模型与边界情况。 |
+| `src/prompts/CLAUDE.md` | 统一管理问答/总结/画像的 Prompt 文本与加载器。 |
 | `src/qa/CLAUDE.md` | QA Engine 提示构建、输出格式与 guardrail 逻辑。 |
-| `src/ui/CLAUDE.md` | Streamlit UI 设计、会话管理与同步/流式模式说明。 |
+| `src/rag/CLAUDE.md` | QA 对生成、LLM 分类与多类型 chunk 生成逻辑（RAG v2）。 |
+| `src/renderer/CLAUDE.md` | 渲染模块设计、两步转换策略及依赖。 |
 | `src/scripts/CLAUDE.md` | CLI 使用案例、参数说明与常见故障排查。 |
+| `src/summarizer/CLAUDE.md` | 单页总结/画像提示词、LLM 客户端及错误处理。 |
+| `src/ui/CLAUDE.md` | Streamlit UI 设计、会话管理与同步/流式模式说明。 |
+| `src/vectordb/CLAUDE.md` | Chroma 集成、检索护栏与统计/维护命令。 |
+| `tests/CLAUDE.md` | 测试覆盖范围、跳过条件与烟囱测试说明。 |
 
 ## External Consulting Agent (Future)
 

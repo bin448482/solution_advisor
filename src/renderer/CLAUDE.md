@@ -1,10 +1,10 @@
 # Renderer Module
 
-This module handles the conversion of PPTX files into PNG slide images for visual analysis.
+This module handles the conversion of PPTX/PDF files into PNG slide images for visual analysis.
 
 ## Purpose
 
-Convert PowerPoint presentations (PPTX) into high-quality PNG images, one per slide, enabling multimodal LLM analysis of slide content including visual elements, layouts, and formatting that text extraction alone cannot capture.
+Convert PowerPoint presentations (PPTX) and PDFs into high-quality PNG images, one per page, enabling multimodal LLM analysis of slide content including visual elements, layouts, and formatting that text extraction alone cannot capture.
 
 ## Architecture
 
@@ -17,6 +17,10 @@ This approach provides better reliability than direct PPTX-to-image conversion:
 2. Poppler's `pdftoppm` converts PDF pages to PNG images
 3. Intermediate PDF is retained for debugging purposes
 
+**PDF → PNG** (via Poppler `pdftoppm` only)
+
+When input is PDF, the renderer skips LibreOffice and renders directly with Poppler.
+
 ### Key Components
 
 **`base.py`**:
@@ -25,7 +29,7 @@ This approach provides better reliability than direct PPTX-to-image conversion:
 - Contract: `render(pptx_path, output_dir, dpi) -> List[Path]`
 
 **`libreoffice.py`**:
-- `LibreOfficeRenderer`: Concrete implementation using LibreOffice + Poppler
+- `LibreOfficeRenderer`: Concrete implementation using LibreOffice + Poppler; supports direct PDF rendering via `pdftoppm`
 - Dependencies: `soffice` (LibreOffice) and `pdftoppm` (Poppler) executables
 - Output naming: `001.png`, `002.png`, ... (zero-padded 3 digits)
 
@@ -69,13 +73,20 @@ from src.config import Settings
 settings = Settings.from_yaml()
 renderer = LibreOfficeRenderer(settings)
 
-# Render all slides to output_dir/slides/
+# Render all slides to output_dir/slides/ (PPTX)
 slide_paths = renderer.render(
     pptx_path=Path("input.pptx"),
     output_dir=Path("output"),
     dpi=150
 )
 # Returns: [output/slides/001.png, output/slides/002.png, ...]
+
+# Render all pages to output_dir/slides/ (PDF)
+slide_paths = renderer.render(
+    pptx_path=Path("input.pdf"),
+    output_dir=Path("output"),
+    dpi=150
+)
 ```
 
 ## Error Handling
