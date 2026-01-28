@@ -1,6 +1,6 @@
-# Solution Advisor · PPT解析与项目画像流水线
+# Solution Advisor · PPT/PDF 解析与项目画像流水线
 
-将项目介绍类 PPT 自动转换为结构化画像与 RAG 知识库，默认产出以 **category_summary + overview** 为主的高质量 `rag_documents.json`，并可选启用 LangGraph Map-Reduce 自动化生成。
+将项目介绍类 PPT/PDF 自动转换为结构化画像与 RAG 知识库，默认产出以 **category_summary + overview** 为主的高质量 `rag_documents.json`，并可选启用 LangGraph Map-Reduce 自动化生成。PDF 输入为纯图片模式（不做文本抽取）。
 
 > 项目类型：AI / Tool / CLI / Web App
 > 主要语言：Python 3.9+
@@ -11,7 +11,7 @@
 
 ## AI 驱动快速上手（Claude / Codex）
 
-本项目是 **AI 驱动的项目生成与知识沉淀工程**：从 PPT 解析、总结到画像与 RAG 资产生成，流程与实现细节分散在 `docs/`、各模块 `AGENTS.md` 以及 `src/` 代码中。你可以直接用 **Claude / Codex** 作为“项目导读助手”，在不通读全仓库的情况下快速建立全局理解与落地路径。
+本项目是 **AI 驱动的项目生成与知识沉淀工程**：从 PPT/PDF 解析、总结到画像与 RAG 资产生成，流程与实现细节分散在 `docs/`、各模块 `AGENTS.md` 以及 `src/` 代码中。你可以直接用 **Claude / Codex** 作为“项目导读助手”，在不通读全仓库的情况下快速建立全局理解与落地路径。
 
 建议的高频提问（可直接复制给工具）：
 - “用一句话说明这个仓库解决什么问题；端到端输入/输出分别是什么？”
@@ -21,7 +21,7 @@
 
 ## 核心价值（Context Engineering · 类别优先 RAG）
 
-本项目把 RAG 的关键从“检索 + 生成”前移到更底层的第一原理：**决定在每一次 LLM 生成步骤中，什么信息应该被放进上下文窗口（Context Engineering）**。在企业 PPT 这类信息密、结构散、噪声高的资产上，核心价值体现在以下几点：
+本项目把 RAG 的关键从“检索 + 生成”前移到更底层的第一原理：**决定在每一次 LLM 生成步骤中，什么信息应该被放进上下文窗口（Context Engineering）**。在企业 PPT/PDF 这类信息密、结构散、噪声高的资产上，核心价值体现在以下几点：
 
 - **把上下文当稀缺资源而不是“垃圾桶”**：通过离线提炼与结构化，把低密度、强冗余的原始内容转成高密度知识单元，减少无效 token 与注意力分散（Context Rot），让回答更稳定、更一致。
 - **用“类别优先”对抗检索碎片化**：摄取阶段先做单页总结，再按主题聚合形成 `category_summary`，把“散落在多页的关键概念”变成可直接装配到上下文的主题部件；运行时优先检索类别摘要、按需补充少量证据页/引用，避免在线“拼图式推理”。
@@ -30,7 +30,7 @@
 
 适用的典型场景：
 - **售前/解决方案顾问**：快速回答“核心功能/差异点/适用行业/实施路径/成功案例”等高频问题，并能给出可追溯引用。
-- **多项目知识库沉淀**：把每份项目 PPT 统一沉淀为可检索的类别摘要资产，跨项目复用，支持项目过滤与低成本部署。
+- **多项目知识库沉淀**：把每份项目 PPT/PDF 统一沉淀为可检索的类别摘要资产，跨项目复用，支持项目过滤与低成本部署。
 - **交付与内部对齐**：用项目画像与类别摘要驱动需求澄清、交付范围对齐、培训材料生成，减少口径漂移。
 - **批量摄取与治理**：当资产来源复杂、格式不一时，用离线提炼（含校验与回退）提升稳定性，避免在线检索质量波动导致的幻觉与返工。
 
@@ -44,7 +44,7 @@
 ---
 
 ## 目录
-- [Solution Advisor · PPT解析与项目画像流水线](#solution-advisor--ppt解析与项目画像流水线)
+- [Solution Advisor · PPT/PDF 解析与项目画像流水线](#solution-advisor--pptpdf-解析与项目画像流水线)
   - [AI 驱动快速上手（Claude / Codex）](#ai-驱动快速上手claude--codex)
   - [核心价值（Context Engineering · 类别优先 RAG）](#核心价值context-engineering--类别优先-rag)
   - [徽章（可选）](#徽章可选)
@@ -55,7 +55,7 @@
   - [安装](#安装)
   - [配置](#配置)
   - [使用示例](#使用示例)
-    - [PPT 解析主流程](#ppt-解析主流程)
+    - [PPT/PDF 解析主流程](#pptpdf-解析主流程)
     - [向量库管理](#向量库管理)
     - [问答 CLI](#问答-cli)
     - [Streamlit Web UI（推荐）](#streamlit-web-ui推荐)
@@ -77,7 +77,7 @@
 ---
 
 ## 功能特性
-- 端到端链路：PPT 渲染 → 文本抽取 → 单页总结 → 项目画像 → `rag_documents.json`，默认走**人工高质量生成**（见 `docs/generate_rag_documents.md`，以 category_summary + overview 为主）。
+- 端到端链路：PPT 渲染 → 文本抽取 → 单页总结 → 项目画像 → `rag_documents.json`；PDF 支持纯图片解析（不做文本抽取）。默认走**人工高质量生成**（见 `docs/generate_rag_documents.md`，以 category_summary + overview 为主）。
 - 可选自动化 RAG：开启 `auto_ragprep_enabled` 时，使用 LangGraph Map-Reduce 生成 category_summary/overview，复刻人工聚合口径；旧 QA 多 chunk 自动链路已退场。
 - RAG 形态：主力 chunk 为 `category_summary`（按类别聚合）+ `overview`；`qa_pair/metrics/topic/step` 作为兼容性附加项，可通过开关控制。
 - 向量检索与护栏：M3E 中文 embedding + Chroma + 相似度阈值（`top_k/top_n/tau` 可调），缺少高相似度时返回空。
@@ -89,7 +89,7 @@
 
 ## 架构 / 设计概览
 - 核心组件：
-  - `renderer/libreoffice.py`：PPTX → PDF → PNG 两步渲染
+  - `renderer/libreoffice.py`：PPTX → PDF → PNG 两步渲染，PDF → PNG 直渲染
   - `extractor/ppt_extractor.py`：文本与 speaker notes 抽取
   - `summarizer/`：单页总结 + 项目画像生成（LLM，支持 mock）
   - `rag/map_reduce_graph.py`：LangGraph Map-Reduce，自动生成 category_summary + overview（仅在 `auto_ragprep_enabled=true` 时调用）
@@ -99,7 +99,7 @@
   - `qa/qa_engine.py`：检索 + LLM 生成 + 监控/缓存；`qa/dialogue_orchestrator.py` 提供引导式对话
   - `pipeline.py`：端到端编排（支持 refine 与分阶段强制重跑）
 - 接口层：
-  - `python -m src`：PPT 解析主流程 CLI
+  - `python -m src`：PPT/PDF 解析主流程 CLI
   - `src/scripts/qa_cli.py`：命令行问答（`--guided` 触发引导式多轮）
   - `src/scripts/vectordb_cli.py`：向量库管理（导入/批量导入/查询/统计/删除）
   - **`src/ui/streamlit_app.py`：Streamlit Web UI（可视化问答界面）**
@@ -131,7 +131,7 @@ pip install -r requirements.txt
 pip install streamlit>=1.30.0
 ```
 
-安装 LibreOffice / Poppler（PPT 渲染必需）：
+安装 LibreOffice / Poppler（PPT/PDF 渲染必需）：
 - Windows：安装 LibreOffice，确保 `soffice.exe` 在 PATH；安装 Poppler for Windows，将 `pdftoppm.exe` 所在目录加入 PATH。
 - macOS：`brew install --cask libreoffice`，`brew install poppler`
 - Linux：`apt/yum install libreoffice`，`apt/yum install poppler-utils`
@@ -161,10 +161,13 @@ pdftoppm -h | head -n 1
 
 ## 使用示例
 
-### PPT 解析主流程
+### PPT/PDF 解析主流程
 ```bash
 # 基础用法
 python -m src --input ppts/ChatBI产品介绍_2025.pptx --output ppt_outputs/ChatBI产品介绍_2025
+
+# PDF 纯图片模式
+python -m src --input pdfs/AI驱动的新一代智能软件测试最新版-智穹云启-202508-精简版.pdf --output ppt_outputs/AI驱动的新一代智能软件测试最新版-智穹云启-202508-精简版
 
 # 强制重新运行（忽略 manifest）
 python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --force
@@ -180,7 +183,7 @@ python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --refine --th
 python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --no-vectordb
 ```
 
-- 默认路径：运行后获得 `slides/`、`slide_texts.jsonl`、`page_summaries/`、`doc_summary/project_profile.json`。**RAG 默认走人工高质量路线**：按 `docs/generate_rag_documents.md` 产出以 category_summary+overview 为主的 `embeddings/rag_documents.json`，再重跑主流程（或用 `vectordb_cli import-docs`）写入向量库。
+- 默认路径：运行后获得 `slides/`、`page_summaries/`、`doc_summary/project_profile.json`；PPTX 还会生成 `slide_texts.jsonl`。**RAG 默认走人工高质量路线**：按 `docs/generate_rag_documents.md` 产出以 category_summary+overview 为主的 `embeddings/rag_documents.json`，再重跑主流程（或用 `vectordb_cli import-docs`）写入向量库。
 - 自动 RAG（可选）：`config/settings.yaml` 中设 `auto_ragprep_enabled: true` 时，流水线会调用 LangGraph Map-Reduce 自动生成 category_summary/overview 并入库，适合批量/草稿。
 - 产物与错误均写入 `manifest.json`，可复用缓存避免重复计算。
 
@@ -249,7 +252,7 @@ streamlit run src/ui/streamlit_app.py --server.port 8501
 
 ### 输出示例
 - `slides/001.png`…：渲染图片
-- `slide_texts.jsonl`：每页抽取的原始文本
+- `slide_texts.jsonl`：每页抽取的原始文本（仅 PPTX）
 - `page_summaries/001.json`…：单页总结
 - `doc_summary/project_profile.json`：聚合画像
 - `embeddings/rag_documents.json`：RAG 文档（默认以 category_summary + overview 为主，兼容 qa_pair/metrics 等）
@@ -262,6 +265,7 @@ streamlit run src/ui/streamlit_app.py --server.port 8501
 .
 ├─docs/                     # 需求、设计、方案文档
 ├─ppts/                     # 输入 PPT 资产
+├─pdfs/                     # 输入 PDF 资产（纯图片）
 ├─ppt_outputs/              # 渲染与总结产物（构建输出）
 │  └─<project>/
 │     ├─slides/             # PNG 渲染图片
@@ -271,7 +275,7 @@ streamlit run src/ui/streamlit_app.py --server.port 8501
 │     ├─embeddings/         # RAG 文档（rag_documents.json）
 │     └─manifest.json       # 元数据与错误记录
 ├─src/                      # 核心代码
-│  ├─renderer/              # PPTX → PDF → PNG 渲染
+│  ├─renderer/              # PPTX/PDF → PNG 渲染
 │  ├─extractor/             # 文本与 speaker notes 抽取
 │  ├─summarizer/            # 单页总结 + 项目画像生成（LLM）
 │  ├─prompts/               # 统一 Prompt 管理
@@ -359,7 +363,7 @@ pytest tests/ --cov=src --cov-report=html
 ## 实施过程说明（通俗版，聚焦 category-first RAG）
 
 ### 我们要解决什么问题？
-项目介绍类 PPT 往往信息密、结构散、样式不统一。直接把整份 PPT 丢给大模型要么超上下文，要么得到碎片化、不可追溯的答案。目标是把 PPT 里的知识沉淀成可检索、可追溯的 RAG 资产，既能回答「核心功能是什么？」这种高频问题，又能稳定支撑多项目、低成本的内网部署。
+项目介绍类 PPT/PDF 往往信息密、结构散、样式不统一。直接把整份 PPT/PDF 丢给大模型要么超上下文，要么得到碎片化、不可追溯的答案。目标是把 PPT/PDF 里的知识沉淀成可检索、可追溯的 RAG 资产，既能回答「核心功能是什么？」这种高频问题，又能稳定支撑多项目、低成本的内网部署。
 
 ### 为什么选 “category-first” 路线？
 1) **可追溯且抗碎片**：先做单页总结，再按主题类别聚合生成category_summary，每条都带来源 slide refs。相比逐页 QA，类别级聚合减少重复和噪声。  

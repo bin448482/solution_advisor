@@ -1,6 +1,6 @@
-# Solution Advisor · PPT Parsing & Project Profiling Pipeline
+# Solution Advisor · PPT/PDF Parsing & Project Profiling Pipeline
 
-Automatically converts project-introduction PPTs into a structured project profile and a RAG-ready knowledge base. By default, it produces a high-quality `rag_documents.json` centered on **`category_summary` + `overview`**, with an optional LangGraph Map-Reduce path for automated draft generation.
+Automatically converts project-introduction PPTs/PDFs into a structured project profile and a RAG-ready knowledge base. By default, it produces a high-quality `rag_documents.json` centered on **`category_summary` + `overview`**, with an optional LangGraph Map-Reduce path for automated draft generation. PDF input runs in image-only mode (no text extraction).
 
 > Project type: AI / Tool / CLI / Web App  
 > Primary language: Python 3.9+  
@@ -11,7 +11,7 @@ Automatically converts project-introduction PPTs into a structured project profi
 
 ## AI-Assisted Quickstart (Claude / Codex)
 
-This project is an **AI-driven pipeline for project ingestion and knowledge distillation**. The end-to-end flow (PPT parsing → summarization → profiling → RAG assets) is documented across `docs/`, module-level `AGENTS.md`, and the code under `src/`. You can use **Claude / Codex** as a “repo guide” to build a working understanding without reading everything end-to-end.
+This project is an **AI-driven pipeline for project ingestion and knowledge distillation**. The end-to-end flow (PPT/PDF parsing → summarization → profiling → RAG assets) is documented across `docs/`, module-level `AGENTS.md`, and the code under `src/`. You can use **Claude / Codex** as a “repo guide” to build a working understanding without reading everything end-to-end.
 
 High-frequency prompts you can copy into your assistant:
 - “In one sentence: what problem does this repo solve? What are the end-to-end input/output artifacts?”
@@ -21,7 +21,7 @@ High-frequency prompts you can copy into your assistant:
 
 ## Core Value (Context Engineering · Category-first RAG)
 
-This project moves the key of RAG “retrieval + generation” upstream to a more fundamental principle: **deciding what information should enter the context window at each LLM step (Context Engineering)**. For enterprise PPTs (dense, loosely structured, noisy), the core value is:
+This project moves the key of RAG “retrieval + generation” upstream to a more fundamental principle: **deciding what information should enter the context window at each LLM step (Context Engineering)**. For enterprise PPTs/PDFs (dense, loosely structured, noisy), the core value is:
 
 - **Treat context as a scarce resource, not a “dumping ground”**: distill noisy, redundant raw content into dense knowledge units offline, reducing wasted tokens and attention fragmentation (context rot) for more consistent answers.
 - **Fight retrieval fragmentation with “category-first” ingestion**: summarize per slide first, then aggregate by topic into `category_summary` so “key concepts scattered across slides” become ready-to-use context modules; at query time, retrieve category summaries first and only add a small number of evidence slides when needed.
@@ -30,7 +30,7 @@ This project moves the key of RAG “retrieval + generation” upstream to a mor
 
 Typical scenarios:
 - **Pre-sales / solution consultants**: answer frequent questions like “core capabilities / differentiators / target industries / implementation path / success cases” with traceable references.
-- **Multi-project knowledge base**: standardize each project PPT into category summaries, enable project-level filtering, and deploy cheaply.
+- **Multi-project knowledge base**: standardize each project PPT/PDF into category summaries, enable project-level filtering, and deploy cheaply.
 - **Delivery alignment**: use project profiles + category summaries to drive requirement clarification and internal alignment, reducing “message drift”.
 - **Batch ingestion & governance**: offline distillation (with validation/fallback) reduces hallucinations and rework caused by unstable online retrieval quality.
 
@@ -46,7 +46,7 @@ Typical scenarios:
 
 ## Table of Contents
 
-- [Solution Advisor · PPT Parsing & Project Profiling Pipeline](#solution-advisor--ppt-parsing--project-profiling-pipeline)
+- [Solution Advisor · PPT/PDF Parsing & Project Profiling Pipeline](#solution-advisor--pptpdf-parsing--project-profiling-pipeline)
   - [AI-Assisted Quickstart (Claude / Codex)](#ai-assisted-quickstart-claude--codex)
   - [Core Value (Context Engineering · Category-first RAG)](#core-value-context-engineering--category-first-rag)
   - [Badges (Optional)](#badges-optional)
@@ -57,7 +57,7 @@ Typical scenarios:
   - [Installation](#installation)
   - [Configuration](#configuration)
   - [Usage Examples](#usage-examples)
-    - [Main PPT Parsing Pipeline](#main-ppt-parsing-pipeline)
+    - [Main PPT/PDF Parsing Pipeline](#main-pptpdf-parsing-pipeline)
     - [Vector DB Management](#vector-db-management)
     - [QA CLI](#qa-cli)
     - [Streamlit Web UI (Recommended)](#streamlit-web-ui-recommended)
@@ -80,7 +80,7 @@ Typical scenarios:
 
 ## Features
 
-- End-to-end pipeline: PPT render → text extraction → per-slide summary → project profile → `rag_documents.json`. By default, RAG documents are generated via a **high-quality manual workflow** (see `docs/generate_rag_documents.md`) focused on `category_summary + overview`.
+- End-to-end pipeline: PPT render → text extraction → per-slide summary → project profile → `rag_documents.json`. PDF input is supported in image-only mode (no text extraction). By default, RAG documents are generated via a **high-quality manual workflow** (see `docs/generate_rag_documents.md`) focused on `category_summary + overview`.
 - Optional automated RAG: when `auto_ragprep_enabled` is enabled, use LangGraph Map-Reduce to generate `category_summary/overview` aligned with the manual aggregation conventions; the legacy per-slide QA auto-chain is deprecated.
 - RAG shape: primary chunks are `category_summary` (topic aggregation) + `overview`; `qa_pair/metrics/topic/step` are compatibility add-ons controlled via toggles.
 - Vector retrieval with guardrails: M3E embeddings + Chroma + a similarity threshold (`top_k/top_n/tau` tunable); return empty when no strong match is found.
@@ -93,7 +93,7 @@ Typical scenarios:
 ## Architecture / Design Overview
 
 - Core components:
-  - `renderer/libreoffice.py`: PPTX → PDF → PNG (two-step rendering)
+  - `renderer/libreoffice.py`: PPTX → PDF → PNG (two-step rendering), PDF → PNG (direct)
   - `extractor/ppt_extractor.py`: extract slide text and speaker notes
   - `summarizer/`: per-slide summaries + project profile (LLM; mock supported)
   - `rag/map_reduce_graph.py`: LangGraph Map-Reduce to auto-generate `category_summary + overview` (only when `auto_ragprep_enabled=true`)
@@ -103,7 +103,7 @@ Typical scenarios:
   - `qa/qa_engine.py`: retrieval + LLM generation + monitoring/cache; `qa/dialogue_orchestrator.py` provides guided dialogue
   - `pipeline.py`: end-to-end orchestration (refine + stage-level force rerun)
 - Interfaces:
-  - `python -m src`: main PPT parsing CLI
+  - `python -m src`: main PPT/PDF parsing CLI
   - `src/scripts/qa_cli.py`: CLI QA (`--guided` enables guided multi-turn)
   - `src/scripts/vectordb_cli.py`: vector DB ops (import/batch import/query/stats/delete)
   - `src/ui/streamlit_app.py`: Streamlit Web UI
@@ -137,7 +137,7 @@ pip install -r requirements.txt
 pip install streamlit>=1.30.0
 ```
 
-Install LibreOffice / Poppler (required for PPT rendering):
+Install LibreOffice / Poppler (required for PPT/PDF rendering):
 - Windows: install LibreOffice and make sure `soffice.exe` is on PATH; install Poppler for Windows and add the directory containing `pdftoppm.exe` to PATH.
 - macOS: `brew install --cask libreoffice`, `brew install poppler`
 - Linux: `apt/yum install libreoffice`, `apt/yum install poppler-utils`
@@ -170,11 +170,14 @@ If not on PATH, set absolute paths in `config/settings.yaml` (see “Configurati
 
 ## Usage Examples
 
-### Main PPT Parsing Pipeline
+### Main PPT/PDF Parsing Pipeline
 
 ```bash
 # Basic
 python -m src --input ppts/ChatBI产品介绍_2025.pptx --output ppt_outputs/ChatBI产品介绍_2025
+
+# PDF image-only
+python -m src --input pdfs/AI驱动的新一代智能软件测试最新版-智穹云启-202508-精简版.pdf --output ppt_outputs/AI驱动的新一代智能软件测试最新版-智穹云启-202508-精简版
 
 # Force rerun (ignore manifest)
 python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --force
@@ -190,7 +193,7 @@ python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --refine --th
 python -m src --input ppts/<file>.pptx --output ppt_outputs/<name> --no-vectordb
 ```
 
-- Default outputs include `slides/`, `slide_texts.jsonl`, `page_summaries/`, and `doc_summary/project_profile.json`.
+- Default outputs include `slides/`, `slide_texts.jsonl` (PPTX only), `page_summaries/`, and `doc_summary/project_profile.json`.
 - **Default RAG path is the manual high-quality workflow**: generate `embeddings/rag_documents.json` (focused on `category_summary + overview`) following `docs/generate_rag_documents.md`, then rerun the pipeline (or use `vectordb_cli import-docs`) to ingest into the vector DB.
 - Optional auto RAG: set `auto_ragprep_enabled: true` in `config/settings.yaml` to let the pipeline run LangGraph Map-Reduce and ingest automatically (useful for batch/draft generation).
 - All outputs and errors are recorded in `manifest.json` and can be reused to avoid repeated work.
@@ -265,7 +268,7 @@ URL: http://localhost:8501
 ### Outputs
 
 - `slides/001.png`…: rendered slide images
-- `slide_texts.jsonl`: extracted raw text per slide
+- `slide_texts.jsonl`: extracted raw text per slide (PPTX only)
 - `page_summaries/001.json`…: per-slide summaries
 - `doc_summary/project_profile.json`: aggregated project profile
 - `embeddings/rag_documents.json`: RAG documents (default: `category_summary + overview`; compatibility: `qa_pair/metrics/...`)
@@ -279,6 +282,7 @@ URL: http://localhost:8501
 .
 ├─docs/                     # Requirements/design/plan docs
 ├─ppts/                     # Input PPT assets
+├─pdfs/                     # Input PDF assets (image-only)
 ├─ppt_outputs/              # Rendered & summarized outputs (build artifacts)
 │  └─<project>/
 │     ├─slides/             # PNG slide images
@@ -288,7 +292,7 @@ URL: http://localhost:8501
 │     ├─embeddings/         # RAG docs (rag_documents.json)
 │     └─manifest.json       # Metadata and error records
 ├─src/                      # Core code
-│  ├─renderer/              # PPTX → PDF → PNG rendering
+│  ├─renderer/              # PPTX/PDF → PNG rendering
 │  ├─extractor/             # Text and speaker notes extraction
 │  ├─summarizer/            # Per-slide summary + project profile (LLM)
 │  ├─prompts/               # Prompt management
@@ -385,7 +389,7 @@ This project is currently for internal use only. License: Private (not public). 
 
 ### What problem are we solving?
 
-Project-introduction PPTs are dense, loosely structured, and stylistically inconsistent. Feeding the whole deck to an LLM either exceeds context limits or produces fragmented, non-traceable answers. The goal is to distill PPT knowledge into retrievable, traceable RAG assets that reliably answer high-frequency questions (e.g., “What are the core capabilities?”) and support multi-project, low-cost internal deployment.
+Project-introduction PPTs/PDFs are dense, loosely structured, and stylistically inconsistent. Feeding the whole deck to an LLM either exceeds context limits or produces fragmented, non-traceable answers. The goal is to distill PPT/PDF knowledge into retrievable, traceable RAG assets that reliably answer high-frequency questions (e.g., “What are the core capabilities?”) and support multi-project, low-cost internal deployment.
 
 ### Why “category-first”?
 
@@ -409,4 +413,3 @@ Project-introduction PPTs are dense, loosely structured, and stylistically incon
 4) **Embedding + guardrails**: batch encode with `moka-ai/m3e-base` (auto CPU/CUDA/MPS). Metadata includes project/slide/level/chunk_type/category_id/confidence. Return empty when similarity is low to reduce hallucinations.  
 5) **Retrieval + answering**: `ChromaStore.query_with_guardrails(..., tau=0.5, top_k=8, top_n=5)` with project filtering and optional detail-slide boosting; `QAEngine` provides a unified wrapper shared by CLI/UI.  
 6) **Monitoring + cache**: `QAMonitor` writes exact-match cache and logs (TTL 7 days; `vectordb_version` invalidates globally). Cache hits are printed as `[cache hit/<level>]` to support rollout and traceability.
-
